@@ -26,48 +26,6 @@ The isolation logic is implemented by a `security definer` function `get_user_ce
 
 A database trigger `on_auth_user_created` automatically builds a profile record on the `profiles` table whenever a new user registers through Supabase Auth, extracting metadata like `centre_id` and `full_name` passed during registration.
 
----
-
-## Installation & Setup
-
-### 1. Database Setup
-1. Create a new project on the [Supabase Dashboard](https://database.new).
-2. Open the **SQL Editor** in your Supabase project.
-3. Paste the contents of the `supabase.sql` file into a new query window and click **Run**. This will generate the tables, configure indexes, enable RLS policies, map database triggers, and load seed records.
-
-### 2. Environment Configuration
-Create a `.env.local` file in the root folder of the project using the structure below:
-
-```env
-# Supabase Configuration
-NEXT_PUBLIC_SUPABASE_URL=https://your-project-id.supabase.co
-NEXT_PUBLIC_SUPABASE_ANON_KEY=your-anon-key-here
-
-# AI Provider Settings ('gemini' or 'openai')
-DEFAULT_AI_PROVIDER=gemini
-
-# Google Gemini Settings (obtain key from Google AI Studio)
-GEMINI_API_KEY=your-gemini-key-here
-GEMINI_MODEL=gemini-2.5-flash
-
-# OpenAI Settings (obtain key from OpenAI Platform)
-OPENAI_API_KEY=your-openai-key-here
-OPENAI_MODEL=gpt-4o
-```
-
-### 3. Local Development
-1. Install dependencies:
-   ```bash
-   npm install
-   ```
-2. Start the local server:
-   ```bash
-   npm run dev
-   ```
-3. Open your browser and navigate to `http://localhost:3000`.
-
----
-
 ## Verification Protocols
 
 Use these steps to verify RLS isolation and the AI vision pipeline:
@@ -91,8 +49,4 @@ Use these steps to verify RLS isolation and the AI vision pipeline:
 
 ## Production Deployment to Vercel
 
-1. Push your project files to your GitHub repository (refer to the Git instructions below).
-2. Open the [Vercel Dashboard](https://vercel.com) and click **Add New** -> **Project**.
-3. Import your GitHub repository.
-4. Expand the **Environment Variables** section and paste your config variables (from your `.env.local` file).
-5. Click **Deploy**. Vercel will build and launch your production build.
+
