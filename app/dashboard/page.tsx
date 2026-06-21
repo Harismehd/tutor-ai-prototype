@@ -17,6 +17,7 @@ interface Student {
 
 interface QuestionFeedback {
   question_number: number;
+  scratchpad?: string;
   is_correct: boolean;
   correct_answer: string;
   mistake_type: string;
@@ -662,7 +663,7 @@ export default function DashboardPage() {
                                   )}
                                 </div>
                                 {!q.is_correct && (
-                                  <div className="pt-1.5 border-t border-slate-800/40 text-slate-300 space-y-1 mt-1">
+                                  <div className="pt-1.5 border-t border-slate-800/40 text-slate-300 space-y-1 mt-1 pb-1">
                                     <p><span className="text-[10px] text-slate-500 uppercase tracking-wider block">Correct Answer:</span> <strong className="text-emerald-400">{q.correct_answer}</strong></p>
                                     <p><span className="text-[10px] text-slate-500 uppercase tracking-wider block">Mistake details:</span> {q.mistake_type}</p>
                                     <span className="inline-block bg-indigo-950 text-indigo-400 px-1.5 py-0.5 rounded text-[10px] font-bold border border-indigo-900/30 mt-1">
@@ -670,6 +671,15 @@ export default function DashboardPage() {
                                     </span>
                                   </div>
                                 )}
+                                <details className="group mt-2 border-t border-slate-800/40 pt-1.5">
+                                  <summary className="cursor-pointer text-[10px] text-indigo-400 hover:text-indigo-300 font-semibold select-none flex items-center gap-1 outline-none">
+                                    <span>AI Reasoning Logs</span>
+                                    <span className="text-[8px] transition-transform group-open:rotate-180">▼</span>
+                                  </summary>
+                                  <div className="mt-1.5 p-2 bg-[#090d16]/90 border border-slate-800/80 rounded text-[10px] text-slate-400 leading-normal font-mono whitespace-pre-wrap">
+                                    {q.scratchpad || 'No step-by-step reasoning logs recorded for this item.'}
+                                  </div>
+                                </details>
                               </div>
                             ))}
                           </div>
@@ -736,12 +746,21 @@ export default function DashboardPage() {
                                   )}
                                 </div>
                                 {!q.is_correct && (
-                                  <div className="text-[11px] text-slate-400 space-y-0.5 pt-1.5 border-t border-slate-800/30">
+                                  <div className="text-[11px] text-slate-400 space-y-0.5 pt-1.5 border-t border-slate-800/30 pb-1">
                                     <p>Correction: <strong className="text-emerald-400">{q.correct_answer}</strong></p>
                                     <p>Mistake: {q.mistake_type}</p>
                                     <p>Topic: <span className="text-indigo-400">{q.topic_tag}</span></p>
                                   </div>
                                 )}
+                                <details className="group mt-2 border-t border-slate-800/30 pt-1.5">
+                                  <summary className="cursor-pointer text-[10px] text-indigo-400 hover:text-indigo-300 font-semibold select-none flex items-center gap-1 outline-none">
+                                    <span>AI Reasoning Logs</span>
+                                    <span className="text-[8px] transition-transform group-open:rotate-180">▼</span>
+                                  </summary>
+                                  <div className="mt-1.5 p-2 bg-[#080c14]/90 border border-slate-800/80 rounded text-[10px] text-slate-400 leading-normal font-mono whitespace-pre-wrap">
+                                    {q.scratchpad || 'No step-by-step reasoning logs recorded for this item.'}
+                                  </div>
+                                </details>
                               </div>
                             ))}
                           </div>

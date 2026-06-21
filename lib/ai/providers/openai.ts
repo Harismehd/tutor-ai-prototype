@@ -65,7 +65,8 @@ You MUST respond with a JSON object conforming to the following schema:
   "questions": [
     {
       "question_number": 1,
-      "is_correct": true, // true if correct, false if incorrect
+      "scratchpad": "Mandatory step-by-step verification: (1) Identify the question and its values/expression. (2) Solve it step-by-step. (3) Identify the student's written response. (4) Compare student's answer with your independent solution, allowing for mathematical equivalence, synonyms, decimals/fractions, formatting variants, or alternative notations. (5) Formulate conclusion on whether they match.",
+      "is_correct": true, // true if correct, false if incorrect based on the scratchpad verification
       "correct_answer": "123", // The correct answer or correction (only needed if is_correct is false, otherwise leave empty "")
       "mistake_type": "None", // Description of the mistake (only needed if is_correct is false, e.g., "Calculation Error", "Wrong Operation", or "None" if correct)
       "topic_tag": "Fraction Addition" // A short 1-3 word tag describing the mathematical topic
@@ -96,6 +97,7 @@ Return ONLY the raw JSON object conforming to the schema.`,
       return {
         questions: feedback.questions.map((q) => ({
           question_number: Number(q.question_number) || 1,
+          scratchpad: q.scratchpad || '',
           is_correct: Boolean(q.is_correct),
           correct_answer: q.correct_answer || '',
           mistake_type: q.mistake_type || 'None',

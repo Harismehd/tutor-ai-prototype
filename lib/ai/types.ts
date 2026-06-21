@@ -1,5 +1,6 @@
 export interface AIQuestionFeedback {
   question_number: number;
+  scratchpad: string;
   is_correct: boolean;
   correct_answer: string;
   mistake_type: string;
