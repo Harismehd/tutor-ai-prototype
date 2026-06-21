@@ -41,10 +41,7 @@ create table if not exists public.student_feedback (
   id uuid primary key default gen_random_uuid(),
   student_id uuid not null references public.students(id) on delete cascade,
   teacher_id uuid not null references public.profiles(id) on delete cascade,
-  mistake text not null,
-  correct_answer text not null,
-  reason_traditional_chinese text not null,
-  weak_area_tag text not null,
+  questions jsonb not null,
   created_at timestamp with time zone default timezone('utc'::text, now()) not null
 );
 

@@ -5,19 +5,19 @@ import { OpenAIProvider } from './providers/openai';
 export class AIVisionFactory {
   /**
    * Instantiates and returns the AI provider specified by the DEFAULT_AI_PROVIDER environment variable.
-   * Defaults to 'gemini' if not specified (suitable for prototype testing).
+   * Defaults to 'openai' if not specified (primary production model).
    */
   static getProvider(): AIVisionProvider {
-    const provider = (process.env.DEFAULT_AI_PROVIDER || 'gemini').toLowerCase();
+    const provider = (process.env.DEFAULT_AI_PROVIDER || 'openai').toLowerCase();
 
     switch (provider) {
-      case 'gemini':
-        return new GeminiProvider();
       case 'openai':
         return new OpenAIProvider();
+      case 'gemini':
+        return new GeminiProvider();
       default:
         throw new Error(
-          `Unsupported AI Provider: "${provider}". Please set DEFAULT_AI_PROVIDER to either "gemini" or "openai" in your environment.`
+          `Unsupported AI Provider: "${provider}". Please set DEFAULT_AI_PROVIDER to either "openai" or "gemini" in your environment.`
         );
     }
   }

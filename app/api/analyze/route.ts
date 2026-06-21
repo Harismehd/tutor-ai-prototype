@@ -2,10 +2,10 @@ import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { AIVisionFactory } from '@/lib/ai/factory';
 
-// Input validation schema using Zod (accepts standard hex UUID formats including version 0)
+// Input validation schema using Zod (accepts standard hex UUID formats and array of base64 images)
 const analyzeRequestSchema = z.object({
   studentId: z.string().regex(/^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/, 'Invalid student ID format'),
-  imageBase64: z.string().min(1, 'Image data is required'),
+  imagesBase64: z.array(z.string().min(1, 'Image data is required')).min(1, 'At least one image page is required'),
 });
 
 export async function POST(req: NextRequest) {
@@ -24,7 +24,7 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const { studentId, imageBase64 } = validation.data;
+    const { studentId, imagesBase64 } = validation.data;
 
     // 1. Verify teacher authentication locally using the JWT token structure
     // This avoids making a slow/timeout-prone round-trip network request to Supabase Auth on the server.
@@ -58,7 +58,7 @@ export async function POST(req: NextRequest) {
     let feedback;
     try {
       const aiProvider = AIVisionFactory.getProvider();
-      feedback = await aiProvider.analyzeWorksheet(imageBase64);
+      feedback = await aiProvider.analyzeWorksheet(imagesBase64);
     } catch (aiError: any) {
       console.error('AI Analysis Provider error:', aiError);
       return NextResponse.json(
@@ -72,10 +72,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({
       success: true,
       feedback: {
-        mistake: feedback.mistake,
-        correctAnswer: feedback.correctAnswer,
-        reasonTraditionalChinese: feedback.reasonTraditionalChinese,
-        weakAreaTag: feedback.weakAreaTag,
+        questions: feedback.questions,
       },
     });
   } catch (error: any) {

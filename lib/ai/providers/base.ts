@@ -1,7 +1,7 @@
 import { AIVisionFeedback, AIVisionProvider } from '../types';
 
 export abstract class BaseAIProvider implements AIVisionProvider {
-  abstract analyzeWorksheet(imageBase64: string): Promise<AIVisionFeedback>;
+  abstract analyzeWorksheet(imagesBase64: string[]): Promise<AIVisionFeedback>;
 
   /**
    * Helper to parse data URLs into MIME type and raw base64 data.

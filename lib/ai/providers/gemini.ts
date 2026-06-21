@@ -13,13 +13,15 @@ export class GeminiProvider extends BaseAIProvider {
       throw new Error('GEMINI_API_KEY environment variable is not defined. Please check your setup.');
     }
     this.genAI = new GoogleGenerativeAI(apiKey);
-    this.modelName = process.env.GEMINI_MODEL || 'gemini-1.5-flash';
+    this.modelName = process.env.GEMINI_MODEL || 'gemini-2.5-flash';
   }
 
-  async analyzeWorksheet(imageBase64: string): Promise<AIVisionFeedback> {
-    const { mimeType, base64Data } = this.parseDataUrl(imageBase64);
+  async analyzeWorksheet(imagesBase64: string[]): Promise<AIVisionFeedback> {
+    if (!imagesBase64 || imagesBase64.length === 0) {
+      throw new Error('At least one worksheet page image is required.');
+    }
 
-    // Get model. With Gemini 1.5+, we can configure the response mime type to JSON.
+    // Configure the model. Gemini 1.5+ and 2.5 support JSON mode.
     const model = this.genAI.getGenerativeModel({
       model: this.modelName,
       generationConfig: {
@@ -27,24 +29,41 @@ export class GeminiProvider extends BaseAIProvider {
       },
     });
 
-    const prompt = `You are a professional tutoring-centre teaching assistant. Analyze the uploaded image of the student's worksheet.
-Find a specific mistake made by the student. If there are multiple mistakes, select the most prominent one.
-You must return a JSON object containing the following four fields:
-1. "mistake": A brief description of the student's mistake.
-2. "correctAnswer": The correct answer or correct method for the step.
-3. "reasonTraditionalChinese": An educational explanation of why the student's answer is incorrect and how to think about it correctly. This explanation MUST be written in fluent Traditional Chinese (繁體中文) suitable for a student/parent.
-4. "weakAreaTag": A short category/concept tag representing the skill or area being tested (e.g. "Fraction Addition", "Basic Multiplication", "Decimal Division").
+    const prompt = `You are an expert mathematical assessment assistant for a tutoring centre.
+Analyze the uploaded image(s) of a student's worksheet. The worksheet may consist of one or multiple pages.
+
+Meticulously check the student's answers for EACH question visible on the worksheet pages.
+
+CRITICAL ACCURACY INSTRUCTIONS:
+1. DO NOT guess. Solve each problem yourself step-by-step before evaluating the student's work.
+2. Double-check all math steps. Ensure that you never falsely label a student's correct answer as incorrect.
+3. Only mark a question as incorrect (is_correct: false) if there is an actual, demonstrable error in their calculation, final answer, or logic. If the answer is correct, you MUST mark is_correct: true.
+4. Set the question_number sequentially as they appear in the worksheet.
+
+You MUST respond with a JSON object conforming to the following schema:
+{
+  "questions": [
+    {
+      "question_number": 1,
+      "is_correct": true, // true if correct, false if incorrect
+      "correct_answer": "123", // The correct answer or correction (only needed if is_correct is false, otherwise leave empty "")
+      "mistake_type": "None", // Description of the mistake (only needed if is_correct is false, e.g., "Calculation Error", "Wrong Operation", or "None" if correct)
+      "topic_tag": "Fraction Addition" // A short 1-3 word tag describing the mathematical topic
+    }
+  ]
+}
 
 Return ONLY the raw JSON object conforming to the schema. Do not include markdown code block backticks (like \`\`\`json) or any conversational text.`;
 
-    const imageParts = [
-      {
+    const imageParts = imagesBase64.map((img) => {
+      const { mimeType, base64Data } = this.parseDataUrl(img);
+      return {
         inlineData: {
           data: base64Data,
-          mimeType: mimeType,
+          mimeType,
         },
-      },
-    ];
+      };
+    });
 
     try {
       const result = await model.generateContent([prompt, ...imageParts]);
@@ -58,12 +77,18 @@ Return ONLY the raw JSON object conforming to the schema. Do not include markdow
       const cleanedText = responseText.replace(/```json|```/g, '').trim();
       const feedback = JSON.parse(cleanedText) as AIVisionFeedback;
 
-      // Ensure properties are strictly provided and default to fallbacks if missing
+      if (!feedback.questions || !Array.isArray(feedback.questions)) {
+        throw new Error('Malformed JSON structure returned by Gemini: missing questions array.');
+      }
+
       return {
-        mistake: feedback.mistake || 'Unable to identify specific mistake details.',
-        correctAnswer: feedback.correctAnswer || 'Unable to determine correct answer.',
-        reasonTraditionalChinese: feedback.reasonTraditionalChinese || '無法生成繁體中文解析，請聯繫老師。',
-        weakAreaTag: feedback.weakAreaTag || 'General Study',
+        questions: feedback.questions.map((q) => ({
+          question_number: Number(q.question_number) || 1,
+          is_correct: Boolean(q.is_correct),
+          correct_answer: q.correct_answer || '',
+          mistake_type: q.mistake_type || 'None',
+          topic_tag: q.topic_tag || 'General Math',
+        })),
       };
     } catch (error: any) {
       console.error('Gemini Provider Error:', error);

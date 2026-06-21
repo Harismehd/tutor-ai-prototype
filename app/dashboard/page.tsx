@@ -15,14 +15,19 @@ interface Student {
   created_at: string;
 }
 
+interface QuestionFeedback {
+  question_number: number;
+  is_correct: boolean;
+  correct_answer: string;
+  mistake_type: string;
+  topic_tag: string;
+}
+
 interface FeedbackRecord {
   id: string;
   student_id: string;
   teacher_id: string;
-  mistake: string;
-  correct_answer: string;
-  reason_traditional_chinese: string;
-  weak_area_tag: string;
+  questions: QuestionFeedback[];
   created_at: string;
   teacher_name?: string; // resolved in UI
 }
@@ -45,9 +50,9 @@ export default function DashboardPage() {
   const [studentHistory, setStudentHistory] = useState<FeedbackRecord[]>([]);
   const [loadingHistory, setLoadingHistory] = useState(false);
 
-  // Image Upload & AI analysis state
-  const [imageFile, setImageFile] = useState<File | null>(null);
-  const [imagePreview, setImagePreview] = useState<string | null>(null);
+  // Image Upload & AI analysis state (supports multiple images/pages)
+  const [imageFiles, setImageFiles] = useState<File[]>([]);
+  const [imagePreviews, setImagePreviews] = useState<string[]>([]);
   const [analyzing, setAnalyzing] = useState(false);
   const [analysisResult, setAnalysisResult] = useState<FeedbackRecord | null>(null);
   const [analysisError, setAnalysisError] = useState<string | null>(null);
@@ -119,8 +124,7 @@ export default function DashboardPage() {
         .from('student_feedback')
         .select(`
           id,
-          mistake,
-          weak_area_tag,
+          questions,
           created_at,
           students(name),
           profiles(full_name)
@@ -143,7 +147,39 @@ export default function DashboardPage() {
     }
   }, [session]);
 
-  // 3. Search-as-you-type trigger (directly on the client to bypass local Node DNS blocks)
+  // 3. Supabase Realtime Subscription for Live Updates
+  useEffect(() => {
+    if (!session) return;
+
+    // Subscribe to new rows in the student_feedback table.
+    // Supabase Realtime automatically filters updates according to active Postgres RLS boundaries.
+    const channel = supabase
+      .channel('realtime-student-feedback-channel')
+      .on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'student_feedback',
+        },
+        (payload) => {
+          // Refetch centre-wide activity log
+          fetchCentreActivity();
+          
+          // Refetch current student's feedback history if active
+          if (selectedStudent && payload.new.student_id === selectedStudent.id) {
+            fetchStudentHistory(selectedStudent.id);
+          }
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [session, selectedStudent]);
+
+  // 4. Search-as-you-type trigger (directly on the client to bypass local Node DNS blocks)
   useEffect(() => {
     const searchStudents = async () => {
       if (searchQuery.trim().length === 0) {
@@ -180,7 +216,7 @@ export default function DashboardPage() {
     return () => clearTimeout(delayDebounce);
   }, [searchQuery, session]);
 
-  // 4. Fetch selected student feedback history
+  // 5. Fetch selected student feedback history
   const fetchStudentHistory = async (studentId: string) => {
     setLoadingHistory(true);
     try {
@@ -190,10 +226,7 @@ export default function DashboardPage() {
           id,
           student_id,
           teacher_id,
-          mistake,
-          correct_answer,
-          reason_traditional_chinese,
-          weak_area_tag,
+          questions,
           created_at,
           profiles(full_name)
         `)
@@ -219,30 +252,40 @@ export default function DashboardPage() {
     setSelectedStudent(student);
     setAnalysisResult(null);
     setAnalysisError(null);
-    setImagePreview(null);
-    setImageFile(null);
+    setImagePreviews([]);
+    setImageFiles([]);
     fetchStudentHistory(student.id);
   };
 
-  // 5. Handle image selection & base64 conversion
+  // 6. Handle multi-image selection & base64 conversion
   const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
 
-    setImageFile(file);
+    const newFiles = Array.from(files);
+    setImageFiles(newFiles);
     setAnalysisResult(null);
     setAnalysisError(null);
 
-    const reader = new FileReader();
-    reader.onloadend = () => {
-      setImagePreview(reader.result as string);
-    };
-    reader.readAsDataURL(file);
+    const newPreviews: string[] = [];
+    let loadedCount = 0;
+
+    newFiles.forEach((file) => {
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        newPreviews.push(reader.result as string);
+        loadedCount++;
+        if (loadedCount === newFiles.length) {
+          setImagePreviews(newPreviews);
+        }
+      };
+      reader.readAsDataURL(file);
+    });
   };
 
-  // 6. Handle AI analysis upload (AI analysis via route handler + client-side database write to bypass local Node timeouts)
+  // 7. Handle AI analysis upload (Multi-image, client-side Supabase write)
   const handleAnalyzeWorksheet = async () => {
-    if (!selectedStudent || !imagePreview) return;
+    if (!selectedStudent || imagePreviews.length === 0) return;
 
     setAnalyzing(true);
     setAnalysisError(null);
@@ -257,7 +300,7 @@ export default function DashboardPage() {
         },
         body: JSON.stringify({
           studentId: selectedStudent.id,
-          imageBase64: imagePreview,
+          imagesBase64: imagePreviews,
         }),
       });
 
@@ -274,10 +317,7 @@ export default function DashboardPage() {
         .insert({
           student_id: selectedStudent.id,
           teacher_id: session.user.id,
-          mistake: result.feedback.mistake,
-          correct_answer: result.feedback.correctAnswer,
-          reason_traditional_chinese: result.feedback.reasonTraditionalChinese,
-          weak_area_tag: result.feedback.weakAreaTag,
+          questions: result.feedback.questions,
         })
         .select()
         .single();
@@ -289,10 +329,10 @@ export default function DashboardPage() {
       setAnalysisResult(savedFeedback);
       
       // Reset image preview state after successful upload
-      setImagePreview(null);
-      setImageFile(null);
+      setImagePreviews([]);
+      setImageFiles([]);
       
-      // Refresh database history and centre activity panels
+      // Refresh local states
       fetchStudentHistory(selectedStudent.id);
       fetchCentreActivity();
 
@@ -372,7 +412,7 @@ export default function DashboardPage() {
             </div>
             <h2 className="text-xl font-bold tracking-tight text-white">Find Student Profile</h2>
             <p className="text-xs text-slate-400 leading-normal">
-              Type the student name (supports Traditional Chinese characters, e.g. <strong>蘇</strong>). Results will dynamically load under RLS isolation.
+              Type the student name to lookup their records under secure Row Level Security (RLS).
             </p>
 
             {/* Search Input */}
@@ -409,16 +449,13 @@ export default function DashboardPage() {
                       </div>
                       <span className="text-sm font-semibold">{student.name}</span>
                     </div>
-                    <span className="text-[10px] text-slate-500 font-mono">
-                      {student.id.substring(0, 8)}...
-                    </span>
                   </button>
                 ))
               ) : searchQuery ? (
                 <div className="text-center py-6 border border-dashed border-slate-800 rounded-xl">
                   <p className="text-xs text-slate-500">No students found matching "{searchQuery}"</p>
                   <p className="text-[10px] text-slate-600 mt-1">
-                    (RLS blocks access to other centres' students)
+                    (RLS isolates access boundaries by centre)
                   </p>
                 </div>
               ) : (
@@ -429,16 +466,16 @@ export default function DashboardPage() {
             </div>
           </div>
 
-          {/* Centre-wide Activity Panel (RLS Demo) */}
+          {/* Centre-wide Activity Panel (RLS Realtime Demo) */}
           <div className="bg-[#0b101c] border border-slate-800/80 rounded-2xl p-5 flex flex-col gap-4 shadow-xl">
             <div className="flex items-center gap-2 text-emerald-400">
-              <Activity className="w-4 h-4" />
+              <Activity className="w-4 h-4 animate-pulse" />
               <span className="text-xs font-bold uppercase tracking-wider">Centre Activity Logs</span>
             </div>
             <div>
               <h3 className="text-sm font-bold text-slate-200">Recent Runs at {profile?.centre_name}</h3>
               <p className="text-[11px] text-slate-400 mt-1 leading-normal">
-                This feed displays recent AI feedback runs compiled by any teacher within your same centre.
+                This feed updates in real-time when any teacher in your centre analyzes a worksheet.
               </p>
             </div>
 
@@ -448,30 +485,36 @@ export default function DashboardPage() {
                   <Loader2 className="w-5 h-5 animate-spin text-slate-600" />
                 </div>
               ) : recentCentreActivity.length > 0 ? (
-                recentCentreActivity.map((act) => (
-                  <div 
-                    key={act.id} 
-                    className="p-3 bg-[#111827]/40 border border-slate-800/50 rounded-xl space-y-1.5 text-left"
-                  >
-                    <div className="flex justify-between items-center text-[10px]">
-                      <span className="font-bold text-slate-300 flex items-center gap-1">
-                        <User className="w-3 h-3 text-slate-500" /> {act.students?.name}
-                      </span>
-                      <span className="text-slate-500">
-                        {new Date(act.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                      </span>
+                recentCentreActivity.map((act) => {
+                  const totalQuestions = act.questions?.length || 0;
+                  const correctQuestions = act.questions?.filter((q: any) => q.is_correct).length || 0;
+                  const firstTopic = act.questions?.[0]?.topic_tag || 'Math';
+
+                  return (
+                    <div 
+                      key={act.id} 
+                      className="p-3 bg-[#111827]/40 border border-slate-800/50 rounded-xl space-y-1.5 text-left"
+                    >
+                      <div className="flex justify-between items-center text-[10px]">
+                        <span className="font-bold text-slate-300 flex items-center gap-1">
+                          <User className="w-3 h-3 text-slate-500" /> {act.students?.name}
+                        </span>
+                        <span className="text-slate-500">
+                          {new Date(act.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                        </span>
+                      </div>
+                      <p className="text-xs font-medium text-indigo-200 truncate">
+                        Score: {correctQuestions}/{totalQuestions} questions correct
+                      </p>
+                      <div className="flex justify-between items-center text-[9px] text-slate-500 pt-1 border-t border-slate-800/60">
+                        <span>By: {act.profiles?.full_name}</span>
+                        <span className="bg-indigo-950 text-indigo-400 px-1.5 py-0.5 rounded font-semibold border border-indigo-900/30">
+                          {firstTopic}
+                        </span>
+                      </div>
                     </div>
-                    <p className="text-xs font-medium text-indigo-200 truncate">
-                      {act.mistake}
-                    </p>
-                    <div className="flex justify-between items-center text-[9px] text-slate-500 pt-1 border-t border-slate-800/60">
-                      <span>By: {act.profiles?.full_name}</span>
-                      <span className="bg-indigo-950 text-indigo-400 px-1.5 py-0.5 rounded font-semibold border border-indigo-900/30">
-                        {act.weak_area_tag}
-                      </span>
-                    </div>
-                  </div>
-                ))
+                  );
+                })
               ) : (
                 <p className="text-xs text-slate-500 text-center py-4 border border-dashed border-slate-800 rounded-xl">
                   No activity logged yet.
@@ -518,7 +561,7 @@ export default function DashboardPage() {
                     <div>
                       <h3 className="text-sm font-bold text-white">AI Worksheet Scan & Analysis</h3>
                       <p className="text-xs text-slate-400 mt-0.5">
-                        Capture or upload the student's worksheet. The AI parses the correction.
+                        Upload one or multiple pages of the worksheet. The AI parses the correction in-memory.
                       </p>
                     </div>
                     <span className="bg-emerald-950 text-emerald-400 text-[10px] font-bold px-2 py-1 rounded-lg border border-emerald-900/30">
@@ -534,20 +577,25 @@ export default function DashboardPage() {
                         <input
                           type="file"
                           accept="image/*"
-                          capture="environment"
+                          multiple
                           onChange={handleImageChange}
                           className="hidden"
                           disabled={analyzing}
                         />
-                        {imagePreview ? (
-                          <div className="absolute inset-0 flex items-center justify-center bg-black/80">
-                            <img 
-                              src={imagePreview} 
-                              alt="Worksheet Preview" 
-                              className="object-contain w-full h-full p-2" 
-                            />
-                            <div className="absolute bottom-2 right-2 bg-indigo-600 text-[10px] font-bold px-2 py-0.5 rounded">
-                              Click to change
+                        {imagePreviews.length > 0 ? (
+                          <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/85 p-3">
+                            <div className="grid grid-cols-3 gap-1.5 w-full h-full max-h-[100px] overflow-y-auto">
+                              {imagePreviews.map((preview, index) => (
+                                <img 
+                                  key={index}
+                                  src={preview} 
+                                  alt={`Page ${index + 1}`} 
+                                  className="object-cover w-full h-16 rounded border border-slate-800" 
+                                />
+                              ))}
+                            </div>
+                            <div className="mt-2 text-indigo-400 text-[11px] font-bold">
+                              {imagePreviews.length} page(s) selected (Click to change)
                             </div>
                           </div>
                         ) : (
@@ -556,14 +604,14 @@ export default function DashboardPage() {
                               <Camera className="w-6 h-6" />
                             </div>
                             <div className="text-center">
-                              <p className="text-xs font-semibold text-slate-200">Take Photo or Upload Image</p>
-                              <p className="text-[10px] text-slate-500 mt-1">accepts image/*, capture="environment"</p>
+                              <p className="text-xs font-semibold text-slate-200">Scan or Upload Pages</p>
+                              <p className="text-[10px] text-slate-500 mt-1">supports multiple file selection</p>
                             </div>
                           </>
                         )}
                       </label>
 
-                      {imagePreview && (
+                      {imagePreviews.length > 0 && (
                         <button
                           type="button"
                           onClick={handleAnalyzeWorksheet}
@@ -591,8 +639,8 @@ export default function DashboardPage() {
                         <div className="flex flex-col items-center justify-center gap-3 py-6">
                           <Loader2 className="w-8 h-8 animate-spin text-indigo-500" />
                           <div className="text-center">
-                            <p className="text-xs font-bold text-slate-200">Parsing and mapping mistakes...</p>
-                            <p className="text-[10px] text-slate-500 mt-0.5">Running OCR & visual model analysis</p>
+                            <p className="text-xs font-bold text-slate-200">Evaluating calculations...</p>
+                            <p className="text-[10px] text-slate-500 mt-0.5">Performing step-by-step verification</p>
                           </div>
                         </div>
                       ) : analysisResult ? (
@@ -602,31 +650,28 @@ export default function DashboardPage() {
                             <h4 className="text-xs font-extrabold text-slate-200 uppercase tracking-wider">AI feedback generated</h4>
                           </div>
 
-                          <div className="space-y-2.5 text-xs text-left">
-                            <div>
-                              <span className="text-[10px] font-bold text-indigo-400 uppercase tracking-wider block">Mistake Identified:</span>
-                              <p className="text-slate-200 font-medium mt-0.5">{analysisResult.mistake}</p>
-                            </div>
-                            
-                            <div className="grid grid-cols-2 gap-3">
-                              <div>
-                                <span className="text-[10px] font-bold text-indigo-400 uppercase tracking-wider block">Correction:</span>
-                                <p className="text-emerald-400 font-bold mt-0.5">{analysisResult.correct_answer}</p>
+                          <div className="space-y-2.5 max-h-60 overflow-y-auto pr-1">
+                            {analysisResult.questions.map((q) => (
+                              <div key={q.question_number} className="p-3 bg-[#111827]/70 border border-slate-800/80 rounded-xl text-left space-y-1 text-xs">
+                                <div className="flex justify-between items-center">
+                                  <span className="font-bold text-slate-300">Question {q.question_number}</span>
+                                  {q.is_correct ? (
+                                    <span className="text-emerald-400 font-bold">✓ Correct</span>
+                                  ) : (
+                                    <span className="text-rose-400 font-bold">✗ Incorrect</span>
+                                  )}
+                                </div>
+                                {!q.is_correct && (
+                                  <div className="pt-1.5 border-t border-slate-800/40 text-slate-300 space-y-1 mt-1">
+                                    <p><span className="text-[10px] text-slate-500 uppercase tracking-wider block">Correct Answer:</span> <strong className="text-emerald-400">{q.correct_answer}</strong></p>
+                                    <p><span className="text-[10px] text-slate-500 uppercase tracking-wider block">Mistake details:</span> {q.mistake_type}</p>
+                                    <span className="inline-block bg-indigo-950 text-indigo-400 px-1.5 py-0.5 rounded text-[10px] font-bold border border-indigo-900/30 mt-1">
+                                      {q.topic_tag}
+                                    </span>
+                                  </div>
+                                )}
                               </div>
-                              <div>
-                                <span className="text-[10px] font-bold text-indigo-400 uppercase tracking-wider block">Topic / Skill:</span>
-                                <span className="inline-block bg-indigo-950 text-indigo-400 px-2 py-0.5 rounded text-[10px] font-bold mt-0.5 border border-indigo-900/40">
-                                  {analysisResult.weak_area_tag}
-                                </span>
-                              </div>
-                            </div>
-
-                            <div className="pt-2 border-t border-slate-800/60">
-                              <span className="text-[10px] font-bold text-indigo-400 uppercase tracking-wider block">Explanation (Traditional Chinese):</span>
-                              <p className="text-indigo-200 mt-1 leading-relaxed bg-[#111827] p-2.5 rounded-xl border border-slate-800">
-                                {analysisResult.reason_traditional_chinese}
-                              </p>
-                            </div>
+                            ))}
                           </div>
                         </div>
                       ) : analysisError ? (
@@ -639,7 +684,7 @@ export default function DashboardPage() {
                         <div className="text-center py-6 text-slate-500">
                           <FileImage className="w-8 h-8 mx-auto text-slate-700 mb-2" />
                           <p className="text-xs font-medium">No active analysis</p>
-                          <p className="text-[10px] text-slate-600 mt-0.5">Upload a worksheet image to start feedback</p>
+                          <p className="text-[10px] text-slate-600 mt-0.5">Upload worksheet pages to start evaluation</p>
                         </div>
                       )}
                     </div>
@@ -669,30 +714,36 @@ export default function DashboardPage() {
                           key={hist.id} 
                           className="bg-[#111827]/40 border border-slate-800 rounded-2xl p-5 space-y-3 text-left transition-all duration-200 hover:border-slate-700"
                         >
-                          <div className="flex justify-between items-start">
-                            <span className="bg-indigo-950 text-indigo-400 px-2 py-0.5 rounded text-[10px] font-bold border border-indigo-900/40">
-                              {hist.weak_area_tag}
-                            </span>
+                          <div className="flex justify-between items-start border-b border-slate-800/60 pb-2">
+                            <div className="text-left text-[10px] text-slate-400">
+                              <span className="font-semibold text-slate-300">Evaluation Run:</span> <span className="font-mono text-slate-400">{hist.id.substring(0, 8)}...</span>
+                            </div>
                             <div className="text-right text-[10px] text-slate-500">
                               <span className="font-semibold text-slate-400 block">{hist.teacher_name}</span>
                               <span>{new Date(hist.created_at).toLocaleDateString()} {new Date(hist.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
                             </div>
                           </div>
 
-                          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
-                            <div>
-                              <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block">Mistake:</span>
-                              <p className="text-slate-200 mt-0.5">{hist.mistake}</p>
-                            </div>
-                            <div>
-                              <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block">Correct Answer:</span>
-                              <p className="text-emerald-400 font-bold mt-0.5">{hist.correct_answer}</p>
-                            </div>
-                          </div>
-
-                          <div className="bg-[#090d16] p-3 rounded-xl border border-slate-800/80 text-xs">
-                            <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block">Traditional Chinese Explanation:</span>
-                            <p className="text-indigo-200 mt-1 leading-relaxed">{hist.reason_traditional_chinese}</p>
+                          <div className="space-y-2">
+                            {hist.questions.map((q) => (
+                              <div key={q.question_number} className="p-2.5 rounded-lg bg-[#090d16] border border-slate-800/80 text-xs space-y-1">
+                                <div className="flex justify-between items-center">
+                                  <span className="font-semibold text-slate-300">Question {q.question_number}</span>
+                                  {q.is_correct ? (
+                                    <span className="text-emerald-400 font-bold">✓</span>
+                                  ) : (
+                                    <span className="text-rose-400 font-bold">✗</span>
+                                  )}
+                                </div>
+                                {!q.is_correct && (
+                                  <div className="text-[11px] text-slate-400 space-y-0.5 pt-1.5 border-t border-slate-800/30">
+                                    <p>Correction: <strong className="text-emerald-400">{q.correct_answer}</strong></p>
+                                    <p>Mistake: {q.mistake_type}</p>
+                                    <p>Topic: <span className="text-indigo-400">{q.topic_tag}</span></p>
+                                  </div>
+                                )}
+                              </div>
+                            ))}
                           </div>
                         </div>
                       ))

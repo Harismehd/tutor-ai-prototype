@@ -1,15 +1,20 @@
+export interface AIQuestionFeedback {
+  question_number: number;
+  is_correct: boolean;
+  correct_answer: string;
+  mistake_type: string;
+  topic_tag: string;
+}
+
 export interface AIVisionFeedback {
-  mistake: string;
-  correctAnswer: string;
-  reasonTraditionalChinese: string;
-  weakAreaTag: string;
+  questions: AIQuestionFeedback[];
 }
 
 export interface AIVisionProvider {
   /**
-   * Analyzes an image of a student's worksheet and returns structured feedback.
-   * @param imageBase64 The base64 data URL (e.g., "data:image/png;base64,...") or raw base64 string of the image.
+   * Analyzes an array of worksheet images (representing pages) and returns structured question-by-question feedback.
+   * @param imagesBase64 Array of base64 data URLs (e.g., "data:image/png;base64,...") or raw base64 strings representing worksheet pages.
    * @returns A promise resolving to structured AIVisionFeedback.
    */
-  analyzeWorksheet(imageBase64: string): Promise<AIVisionFeedback>;
+  analyzeWorksheet(imagesBase64: string[]): Promise<AIVisionFeedback>;
 }
