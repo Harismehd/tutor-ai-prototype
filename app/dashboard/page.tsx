@@ -72,6 +72,36 @@ function getAllQuestionsFromRecord(questionsField: any): QuestionFeedback[] {
   return pages.flatMap(p => p.questions);
 }
 
+function compressImage(base64Str: string, maxW = 1600, maxH = 1600): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.src = base64Str;
+    img.onload = () => {
+      let width = img.width;
+      let height = img.height;
+      if (width > height) {
+        if (width > maxW) {
+          height = Math.round((height * maxW) / width);
+          width = maxW;
+        }
+      } else {
+        if (height > maxH) {
+          width = Math.round((width * maxH) / height);
+          height = maxH;
+        }
+      }
+      const canvas = document.createElement('canvas');
+      canvas.width = width;
+      canvas.height = height;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) { resolve(base64Str); return; }
+      ctx.drawImage(img, 0, 0, width, height);
+      resolve(canvas.toDataURL('image/jpeg', 0.82));
+    };
+    img.onerror = (err) => reject(err);
+  });
+}
+
 export default function DashboardPage() {
   const router = useRouter();
   
@@ -307,16 +337,23 @@ export default function DashboardPage() {
 
     const readersToLoad = newFiles.length;
     let loadedCount = 0;
-    const loadedPreviews: string[] = [];
+    const loadedPreviews: string[] = new Array(newFiles.length);
 
-    newFiles.forEach((file) => {
+    newFiles.forEach((file, index) => {
       const reader = new FileReader();
-      reader.onloadend = () => {
-        loadedPreviews.push(reader.result as string);
+      reader.onloadend = async () => {
+        try {
+          const rawBase64 = reader.result as string;
+          const compressed = await compressImage(rawBase64);
+          loadedPreviews[index] = compressed;
+        } catch (err) {
+          console.error('Compression error, using raw base64:', err);
+          loadedPreviews[index] = reader.result as string;
+        }
         loadedCount++;
         if (loadedCount === readersToLoad) {
           setImageFiles((prev) => [...prev, ...newFiles]);
-          setImagePreviews((prev) => [...prev, ...loadedPreviews]);
+          setImagePreviews((prev) => [...prev, ...loadedPreviews.filter(Boolean)]);
         }
       };
       reader.readAsDataURL(file);
