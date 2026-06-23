@@ -297,30 +297,35 @@ export default function DashboardPage() {
     fetchStudentHistory(student.id);
   };
 
-  // 6. Handle multi-image selection & base64 conversion
-  const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = e.target.files;
+  // 6. Handle image adding (camera/gallery appends) & base64 conversion
+  const handleAddFiles = (files: FileList | null) => {
     if (!files || files.length === 0) return;
 
     const newFiles = Array.from(files);
-    setImageFiles(newFiles);
     setNewlyAddedId(null);
     setAnalysisError(null);
 
-    const newPreviews: string[] = [];
+    const readersToLoad = newFiles.length;
     let loadedCount = 0;
+    const loadedPreviews: string[] = [];
 
     newFiles.forEach((file) => {
       const reader = new FileReader();
       reader.onloadend = () => {
-        newPreviews.push(reader.result as string);
+        loadedPreviews.push(reader.result as string);
         loadedCount++;
-        if (loadedCount === newFiles.length) {
-          setImagePreviews(newPreviews);
+        if (loadedCount === readersToLoad) {
+          setImageFiles((prev) => [...prev, ...newFiles]);
+          setImagePreviews((prev) => [...prev, ...loadedPreviews]);
         }
       };
       reader.readAsDataURL(file);
     });
+  };
+
+  const handleRemoveFile = (indexToRemove: number) => {
+    setImageFiles((prev) => prev.filter((_, i) => i !== indexToRemove));
+    setImagePreviews((prev) => prev.filter((_, i) => i !== indexToRemove));
   };
 
   // 7. Handle AI analysis upload (Multi-image, client-side Supabase write)
@@ -625,59 +630,84 @@ export default function DashboardPage() {
                       </div>
                     ) : (
                       <div className="space-y-4">
-                        <div className="flex flex-col sm:flex-row gap-4 items-stretch">
-                          {/* Upload box */}
-                          <label className="flex-1 border-2 border-dashed border-slate-800 hover:border-indigo-500/50 rounded-2xl p-6 flex flex-col items-center justify-center gap-3 cursor-pointer bg-[#090d16]/50 hover:bg-[#0a101f] transition-all relative overflow-hidden min-h-[140px]">
+                        {/* Interactive Scan/Upload Actions */}
+                        <div className="grid grid-cols-2 gap-4">
+                          {/* Option 1: Mobile Camera Scan */}
+                          <label className="cursor-pointer flex flex-col items-center justify-center p-4 bg-[#111827]/60 hover:bg-[#182235] border border-slate-800 hover:border-indigo-500/40 rounded-2xl transition-all text-center gap-2 min-h-[110px]">
+                            <input
+                              type="file"
+                              accept="image/*"
+                              capture="environment"
+                              onChange={(e) => handleAddFiles(e.target.files)}
+                              className="hidden"
+                              disabled={analyzing}
+                            />
+                            <div className="p-2.5 bg-slate-900 rounded-xl text-indigo-400 border border-slate-800/80">
+                              <Camera className="w-5 h-5" />
+                            </div>
+                            <span className="text-xs font-bold text-slate-200">Scan via Camera</span>
+                            <span className="text-[9px] text-slate-500">Take a photo of a page</span>
+                          </label>
+
+                          {/* Option 2: Choose from Photo Library / Files */}
+                          <label className="cursor-pointer flex flex-col items-center justify-center p-4 bg-[#111827]/60 hover:bg-[#182235] border border-slate-800 hover:border-indigo-500/40 rounded-2xl transition-all text-center gap-2 min-h-[110px]">
                             <input
                               type="file"
                               accept="image/*"
                               multiple
-                              onChange={handleImageChange}
+                              onChange={(e) => handleAddFiles(e.target.files)}
                               className="hidden"
                               disabled={analyzing}
                             />
-                            {imagePreviews.length > 0 ? (
-                              <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/85 p-3">
-                                <div className="grid grid-cols-3 gap-1.5 w-full h-full max-h-[90px] overflow-y-auto">
-                                  {imagePreviews.map((preview, index) => (
-                                    <img 
-                                      key={index}
-                                      src={preview} 
-                                      alt={`Page ${index + 1}`} 
-                                      className="object-cover w-full h-14 rounded border border-slate-800" 
-                                    />
-                                  ))}
-                                </div>
-                                <div className="mt-2 text-indigo-400 text-[11px] font-bold">
-                                  {imagePreviews.length} page(s) selected (Click to change)
-                                </div>
-                              </div>
-                            ) : (
-                              <>
-                                <div className="p-3 bg-slate-900 rounded-xl text-slate-400 border border-slate-800">
-                                  <Camera className="w-5 h-5" />
-                                </div>
-                                <div className="text-center">
-                                  <p className="text-xs font-semibold text-slate-200">Scan or Upload Pages</p>
-                                  <p className="text-[10px] text-slate-500 mt-1">supports multiple file selection</p>
-                                </div>
-                              </>
-                            )}
+                            <div className="p-2.5 bg-slate-900 rounded-xl text-indigo-400 border border-slate-800/80">
+                              <Upload className="w-5 h-5" />
+                            </div>
+                            <span className="text-xs font-bold text-slate-200">Upload from Gallery</span>
+                            <span className="text-[9px] text-slate-500">Pick files / worksheets</span>
                           </label>
-
-                          {imagePreviews.length > 0 && (
-                            <button
-                              type="button"
-                              onClick={handleAnalyzeWorksheet}
-                              disabled={analyzing}
-                              className="sm:w-64 bg-indigo-600 hover:bg-indigo-500 disabled:bg-indigo-600/50 text-white font-bold px-6 py-4 rounded-2xl text-sm transition-all flex flex-col items-center justify-center gap-2 border border-indigo-500/20"
-                            >
-                              <Sparkles className="w-5 h-5 animate-pulse text-indigo-200" />
-                              <span>Analyze with GPT-4o</span>
-                              <span className="text-[9px] text-indigo-300 font-normal">Page-by-page marking logs</span>
-                            </button>
-                          )}
                         </div>
+
+                        {/* Page Previews list with delete buttons */}
+                        {imagePreviews.length > 0 && (
+                          <div className="space-y-3 border-t border-slate-900 pt-4 mt-2">
+                            <div className="text-[10px] uppercase font-bold text-slate-500 tracking-wider">
+                              Selected Worksheet Pages ({imagePreviews.length})
+                            </div>
+                            <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 gap-3">
+                              {imagePreviews.map((preview, index) => (
+                                <div key={index} className="relative aspect-square rounded-xl overflow-hidden border border-slate-800 bg-[#090d16] group">
+                                  <img src={preview} alt={`Page ${index + 1}`} className="object-cover w-full h-full" />
+                                  <button
+                                    type="button"
+                                    onClick={() => handleRemoveFile(index)}
+                                    className="absolute top-1 right-1 bg-rose-600 hover:bg-rose-500 text-white rounded-full p-1 shadow-lg transition-all outline-none"
+                                    title="Remove page"
+                                  >
+                                    <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M6 18L18 6M6 6l12 12" />
+                                    </svg>
+                                  </button>
+                                  <span className="absolute bottom-1 left-1 bg-black/75 px-1.5 py-0.5 rounded text-[8px] font-bold text-indigo-300">
+                                    Page {index + 1}
+                                  </span>
+                                </div>
+                              ))}
+                            </div>
+
+                            {/* Submit Analyze Button */}
+                            <div className="pt-2">
+                              <button
+                                type="button"
+                                onClick={handleAnalyzeWorksheet}
+                                disabled={analyzing}
+                                className="w-full bg-indigo-600 hover:bg-indigo-500 disabled:bg-indigo-600/50 text-white font-bold py-3 rounded-xl text-xs transition-all flex items-center justify-center gap-2 border border-indigo-500/20 shadow-lg shadow-indigo-600/10"
+                              >
+                                <Sparkles className="w-4 h-4 animate-pulse text-indigo-200" />
+                                <span>Analyze complete worksheet with GPT-4o</span>
+                              </button>
+                            </div>
+                          </div>
+                        )}
 
                         {analysisError && (
                           <div className="flex items-center gap-3 p-3 text-rose-400 bg-rose-500/5 border border-rose-500/10 rounded-xl">
