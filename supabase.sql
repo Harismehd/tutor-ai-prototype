@@ -36,6 +36,9 @@ create table if not exists public.students (
   created_at timestamp with time zone default timezone('utc'::text, now()) not null
 );
 
+-- Recreate the student_feedback table to enforce the JSONB questions array column
+drop table if exists public.student_feedback cascade;
+
 -- Student Feedback Table (AI-generated structured feedback)
 create table if not exists public.student_feedback (
   id uuid primary key default gen_random_uuid(),
@@ -87,45 +90,53 @@ alter table public.students enable row level security;
 alter table public.student_feedback enable row level security;
 
 -- Policies for Centres
+drop policy if exists "Users can view their own centre" on public.centres;
 create policy "Users can view their own centre"
   on public.centres
   for select
   using (id = public.get_user_centre_id());
 
 -- Policies for Profiles
+drop policy if exists "Users can view profiles in their centre" on public.profiles;
 create policy "Users can view profiles in their centre"
   on public.profiles
   for select
   using (centre_id = public.get_user_centre_id());
 
+drop policy if exists "Users can update their own profile" on public.profiles;
 create policy "Users can update their own profile"
   on public.profiles
   for update
   using (id = auth.uid() and centre_id = public.get_user_centre_id());
 
 -- Policies for Students
+drop policy if exists "Teachers can view students in their centre" on public.students;
 create policy "Teachers can view students in their centre"
   on public.students
   for select
   using (centre_id = public.get_user_centre_id());
 
+drop policy if exists "Teachers can insert students in their centre" on public.students;
 create policy "Teachers can insert students in their centre"
   on public.students
   for insert
   with check (centre_id = public.get_user_centre_id());
 
+drop policy if exists "Teachers can update students in their centre" on public.students;
 create policy "Teachers can update students in their centre"
   on public.students
   for update
   using (centre_id = public.get_user_centre_id())
   with check (centre_id = public.get_user_centre_id());
 
+drop policy if exists "Teachers can delete students in their centre" on public.students;
 create policy "Teachers can delete students in their centre"
   on public.students
   for delete
   using (centre_id = public.get_user_centre_id());
 
 -- Policies for Student Feedback
+drop policy if exists "Teachers can view feedback for students in their centre" on public.student_feedback;
 create policy "Teachers can view feedback for students in their centre"
   on public.student_feedback
   for select
@@ -138,6 +149,7 @@ create policy "Teachers can view feedback for students in their centre"
     )
   );
 
+drop policy if exists "Teachers can insert feedback for students in their centre" on public.student_feedback;
 create policy "Teachers can insert feedback for students in their centre"
   on public.student_feedback
   for insert
@@ -151,6 +163,7 @@ create policy "Teachers can insert feedback for students in their centre"
     and teacher_id = auth.uid()
   );
 
+drop policy if exists "Teachers can update feedback for students in their centre" on public.student_feedback;
 create policy "Teachers can update feedback for students in their centre"
   on public.student_feedback
   for update
@@ -173,6 +186,7 @@ create policy "Teachers can update feedback for students in their centre"
     and teacher_id = auth.uid()
   );
 
+drop policy if exists "Teachers can delete feedback for students in their centre" on public.student_feedback;
 create policy "Teachers can delete feedback for students in their centre"
   on public.student_feedback
   for delete
