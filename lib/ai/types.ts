@@ -1,14 +1,19 @@
 export interface AIQuestionFeedback {
-  question_number: number;
-  scratchpad: string;
+  question_number: string;
   is_correct: boolean;
   correct_answer: string;
   mistake_type: string;
   topic_tag: string;
+  explanation: string;
+}
+
+export interface AIPageFeedback {
+  page_number: number;
+  questions: AIQuestionFeedback[];
 }
 
 export interface AIVisionFeedback {
-  questions: AIQuestionFeedback[];
+  pages: AIPageFeedback[];
 }
 
 export interface AIVisionProvider {

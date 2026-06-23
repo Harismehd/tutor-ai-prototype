@@ -72,7 +72,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({
       success: true,
       feedback: {
-        questions: feedback.questions,
+        pages: feedback.pages,
       },
     });
   } catch (error: any) {

@@ -16,21 +16,60 @@ interface Student {
 }
 
 interface QuestionFeedback {
-  question_number: number;
-  scratchpad?: string;
+  question_number: string;
   is_correct: boolean;
   correct_answer: string;
   mistake_type: string;
   topic_tag: string;
+  explanation: string;
+}
+
+interface PageFeedback {
+  page_number: number;
+  questions: QuestionFeedback[];
 }
 
 interface FeedbackRecord {
   id: string;
   student_id: string;
   teacher_id: string;
-  questions: QuestionFeedback[];
+  questions: any;
   created_at: string;
   teacher_name?: string; // resolved in UI
+}
+
+// Helpers for backward compatibility and parsing
+function getPagesFromRecord(questionsField: any): PageFeedback[] {
+  if (!questionsField) return [];
+  
+  // If it's the new page-grouped schema: { pages: [...] }
+  if (questionsField.pages && Array.isArray(questionsField.pages)) {
+    return questionsField.pages;
+  }
+  
+  // If it's the old flat array schema: [...]
+  if (Array.isArray(questionsField)) {
+    return [
+      {
+        page_number: 1, // Treat everything as Page 1 for legacy support
+        questions: questionsField.map((q: any) => ({
+          question_number: String(q.question_number) || '1',
+          is_correct: Boolean(q.is_correct),
+          correct_answer: q.correct_answer || '',
+          mistake_type: q.mistake_type || 'None',
+          topic_tag: q.topic_tag || 'General Math',
+          explanation: q.explanation || q.scratchpad || '', // support both explanation and scratchpad fields
+        })),
+      }
+    ];
+  }
+  
+  return [];
+}
+
+function getAllQuestionsFromRecord(questionsField: any): QuestionFeedback[] {
+  const pages = getPagesFromRecord(questionsField);
+  return pages.flatMap(p => p.questions);
 }
 
 export default function DashboardPage() {
@@ -55,7 +94,7 @@ export default function DashboardPage() {
   const [imageFiles, setImageFiles] = useState<File[]>([]);
   const [imagePreviews, setImagePreviews] = useState<string[]>([]);
   const [analyzing, setAnalyzing] = useState(false);
-  const [analysisResult, setAnalysisResult] = useState<FeedbackRecord | null>(null);
+  const [newlyAddedId, setNewlyAddedId] = useState<string | null>(null);
   const [analysisError, setAnalysisError] = useState<string | null>(null);
 
   // Centre-wide recent feedback state (demonstrates data-sharing in centre)
@@ -251,7 +290,7 @@ export default function DashboardPage() {
 
   const handleSelectStudent = (student: Student) => {
     setSelectedStudent(student);
-    setAnalysisResult(null);
+    setNewlyAddedId(null);
     setAnalysisError(null);
     setImagePreviews([]);
     setImageFiles([]);
@@ -265,7 +304,7 @@ export default function DashboardPage() {
 
     const newFiles = Array.from(files);
     setImageFiles(newFiles);
-    setAnalysisResult(null);
+    setNewlyAddedId(null);
     setAnalysisError(null);
 
     const newPreviews: string[] = [];
@@ -290,7 +329,7 @@ export default function DashboardPage() {
 
     setAnalyzing(true);
     setAnalysisError(null);
-    setAnalysisResult(null);
+    setNewlyAddedId(null);
 
     try {
       const response = await fetch('/api/analyze', {
@@ -318,7 +357,7 @@ export default function DashboardPage() {
         .insert({
           student_id: selectedStudent.id,
           teacher_id: session.user.id,
-          questions: result.feedback.questions,
+          questions: { pages: result.feedback.pages },
         })
         .select()
         .single();
@@ -327,7 +366,10 @@ export default function DashboardPage() {
         throw new Error(insertError.message || 'Failed to save analysis feedback to database.');
       }
 
-      setAnalysisResult(savedFeedback);
+      setNewlyAddedId(savedFeedback.id);
+      setTimeout(() => {
+        setNewlyAddedId(null);
+      }, 5000);
       
       // Reset image preview state after successful upload
       setImagePreviews([]);
@@ -487,9 +529,10 @@ export default function DashboardPage() {
                 </div>
               ) : recentCentreActivity.length > 0 ? (
                 recentCentreActivity.map((act) => {
-                  const totalQuestions = act.questions?.length || 0;
-                  const correctQuestions = act.questions?.filter((q: any) => q.is_correct).length || 0;
-                  const firstTopic = act.questions?.[0]?.topic_tag || 'Math';
+                  const questions = getAllQuestionsFromRecord(act.questions);
+                  const totalQuestions = questions.length;
+                  const correctQuestions = questions.filter((q) => q.is_correct).length;
+                  const firstTopic = questions[0]?.topic_tag || 'Math';
 
                   return (
                     <div 
@@ -570,134 +613,83 @@ export default function DashboardPage() {
                     </span>
                   </div>
 
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 items-start">
-                    
-                    {/* Upload box */}
-                    <div className="flex flex-col gap-3">
-                      <label className="border-2 border-dashed border-slate-800 hover:border-indigo-500/50 rounded-2xl p-6 flex flex-col items-center justify-center gap-3 cursor-pointer bg-[#090d16]/50 hover:bg-[#0a101f] transition-all relative overflow-hidden min-h-[160px]">
-                        <input
-                          type="file"
-                          accept="image/*"
-                          multiple
-                          onChange={handleImageChange}
-                          className="hidden"
-                          disabled={analyzing}
-                        />
-                        {imagePreviews.length > 0 ? (
-                          <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/85 p-3">
-                            <div className="grid grid-cols-3 gap-1.5 w-full h-full max-h-[100px] overflow-y-auto">
-                              {imagePreviews.map((preview, index) => (
-                                <img 
-                                  key={index}
-                                  src={preview} 
-                                  alt={`Page ${index + 1}`} 
-                                  className="object-cover w-full h-16 rounded border border-slate-800" 
-                                />
-                              ))}
-                            </div>
-                            <div className="mt-2 text-indigo-400 text-[11px] font-bold">
-                              {imagePreviews.length} page(s) selected (Click to change)
-                            </div>
-                          </div>
-                        ) : (
-                          <>
-                            <div className="p-3 bg-slate-900 rounded-xl text-slate-400 border border-slate-800">
-                              <Camera className="w-6 h-6" />
-                            </div>
-                            <div className="text-center">
-                              <p className="text-xs font-semibold text-slate-200">Scan or Upload Pages</p>
-                              <p className="text-[10px] text-slate-500 mt-1">supports multiple file selection</p>
-                            </div>
-                          </>
-                        )}
-                      </label>
-
-                      {imagePreviews.length > 0 && (
-                        <button
-                          type="button"
-                          onClick={handleAnalyzeWorksheet}
-                          disabled={analyzing}
-                          className="bg-indigo-600 hover:bg-indigo-500 disabled:bg-indigo-600/50 text-white font-bold py-2.5 rounded-xl text-xs transition-all flex items-center justify-center gap-2"
-                        >
-                          {analyzing ? (
-                            <>
-                              <Loader2 className="w-4 h-4 animate-spin" />
-                              <span>AI Analyzing Worksheet...</span>
-                            </>
-                          ) : (
-                            <>
-                              <Sparkles className="w-4 h-4" />
-                              <span>Analyze with AI</span>
-                            </>
-                          )}
-                        </button>
-                      )}
-                    </div>
-
-                    {/* AI Live Output Panel */}
-                    <div className="bg-[#090d16] border border-slate-800/80 rounded-2xl p-5 min-h-[160px] flex flex-col justify-center">
-                      {analyzing ? (
-                        <div className="flex flex-col items-center justify-center gap-3 py-6">
-                          <Loader2 className="w-8 h-8 animate-spin text-indigo-500" />
-                          <div className="text-center">
-                            <p className="text-xs font-bold text-slate-200">Evaluating calculations...</p>
-                            <p className="text-[10px] text-slate-500 mt-0.5">Performing step-by-step verification</p>
-                          </div>
+                  <div className="w-full">
+                    {analyzing ? (
+                      <div className="flex flex-col items-center justify-center gap-4 py-10 bg-[#090d16]/50 border border-slate-800 rounded-2xl">
+                        <Loader2 className="w-10 h-10 animate-spin text-indigo-500" />
+                        <div className="text-center space-y-1">
+                          <p className="text-sm font-bold text-slate-200">AI Marking Assistant Active</p>
+                          <p className="text-xs text-slate-400">Meticulously evaluating worksheet pages in-memory...</p>
+                          <p className="text-[10px] text-slate-500 font-mono">Solving mathematical equations & preparing Traditional Chinese feedback</p>
                         </div>
-                      ) : analysisResult ? (
-                        <div className="space-y-4">
-                          <div className="flex items-center gap-2 border-b border-slate-800/60 pb-2">
-                            <CheckCircle2 className="w-4 h-4 text-emerald-400" />
-                            <h4 className="text-xs font-extrabold text-slate-200 uppercase tracking-wider">AI feedback generated</h4>
-                          </div>
-
-                          <div className="space-y-2.5 max-h-60 overflow-y-auto pr-1">
-                            {analysisResult.questions.map((q) => (
-                              <div key={q.question_number} className="p-3 bg-[#111827]/70 border border-slate-800/80 rounded-xl text-left space-y-1 text-xs">
-                                <div className="flex justify-between items-center">
-                                  <span className="font-bold text-slate-300">Question {q.question_number}</span>
-                                  {q.is_correct ? (
-                                    <span className="text-emerald-400 font-bold">✓ Correct</span>
-                                  ) : (
-                                    <span className="text-rose-400 font-bold">✗ Incorrect</span>
-                                  )}
+                      </div>
+                    ) : (
+                      <div className="space-y-4">
+                        <div className="flex flex-col sm:flex-row gap-4 items-stretch">
+                          {/* Upload box */}
+                          <label className="flex-1 border-2 border-dashed border-slate-800 hover:border-indigo-500/50 rounded-2xl p-6 flex flex-col items-center justify-center gap-3 cursor-pointer bg-[#090d16]/50 hover:bg-[#0a101f] transition-all relative overflow-hidden min-h-[140px]">
+                            <input
+                              type="file"
+                              accept="image/*"
+                              multiple
+                              onChange={handleImageChange}
+                              className="hidden"
+                              disabled={analyzing}
+                            />
+                            {imagePreviews.length > 0 ? (
+                              <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/85 p-3">
+                                <div className="grid grid-cols-3 gap-1.5 w-full h-full max-h-[90px] overflow-y-auto">
+                                  {imagePreviews.map((preview, index) => (
+                                    <img 
+                                      key={index}
+                                      src={preview} 
+                                      alt={`Page ${index + 1}`} 
+                                      className="object-cover w-full h-14 rounded border border-slate-800" 
+                                    />
+                                  ))}
                                 </div>
-                                {!q.is_correct && (
-                                  <div className="pt-1.5 border-t border-slate-800/40 text-slate-300 space-y-1 mt-1 pb-1">
-                                    <p><span className="text-[10px] text-slate-500 uppercase tracking-wider block">Correct Answer:</span> <strong className="text-emerald-400">{q.correct_answer}</strong></p>
-                                    <p><span className="text-[10px] text-slate-500 uppercase tracking-wider block">Mistake details:</span> {q.mistake_type}</p>
-                                    <span className="inline-block bg-indigo-950 text-indigo-400 px-1.5 py-0.5 rounded text-[10px] font-bold border border-indigo-900/30 mt-1">
-                                      {q.topic_tag}
-                                    </span>
-                                  </div>
-                                )}
-                                <details className="group mt-2 border-t border-slate-800/40 pt-1.5">
-                                  <summary className="cursor-pointer text-[10px] text-indigo-400 hover:text-indigo-300 font-semibold select-none flex items-center gap-1 outline-none">
-                                    <span>AI Reasoning Logs</span>
-                                    <span className="text-[8px] transition-transform group-open:rotate-180">▼</span>
-                                  </summary>
-                                  <div className="mt-1.5 p-2 bg-[#090d16]/90 border border-slate-800/80 rounded text-[10px] text-slate-400 leading-normal font-mono whitespace-pre-wrap">
-                                    {q.scratchpad || 'No step-by-step reasoning logs recorded for this item.'}
-                                  </div>
-                                </details>
+                                <div className="mt-2 text-indigo-400 text-[11px] font-bold">
+                                  {imagePreviews.length} page(s) selected (Click to change)
+                                </div>
                               </div>
-                            ))}
+                            ) : (
+                              <>
+                                <div className="p-3 bg-slate-900 rounded-xl text-slate-400 border border-slate-800">
+                                  <Camera className="w-5 h-5" />
+                                </div>
+                                <div className="text-center">
+                                  <p className="text-xs font-semibold text-slate-200">Scan or Upload Pages</p>
+                                  <p className="text-[10px] text-slate-500 mt-1">supports multiple file selection</p>
+                                </div>
+                              </>
+                            )}
+                          </label>
+
+                          {imagePreviews.length > 0 && (
+                            <button
+                              type="button"
+                              onClick={handleAnalyzeWorksheet}
+                              disabled={analyzing}
+                              className="sm:w-64 bg-indigo-600 hover:bg-indigo-500 disabled:bg-indigo-600/50 text-white font-bold px-6 py-4 rounded-2xl text-sm transition-all flex flex-col items-center justify-center gap-2 border border-indigo-500/20"
+                            >
+                              <Sparkles className="w-5 h-5 animate-pulse text-indigo-200" />
+                              <span>Analyze with GPT-4o</span>
+                              <span className="text-[9px] text-indigo-300 font-normal">Page-by-page marking logs</span>
+                            </button>
+                          )}
+                        </div>
+
+                        {analysisError && (
+                          <div className="flex items-center gap-3 p-3 text-rose-400 bg-rose-500/5 border border-rose-500/10 rounded-xl">
+                            <AlertTriangle className="w-4 h-4 text-rose-500 shrink-0" />
+                            <div className="text-left text-xs leading-normal">
+                              <span className="font-bold">Analysis Failed: </span>
+                              {analysisError}
+                            </div>
                           </div>
-                        </div>
-                      ) : analysisError ? (
-                        <div className="text-center p-4 space-y-2 text-rose-400 bg-rose-500/5 border border-rose-500/10 rounded-xl">
-                          <AlertTriangle className="w-8 h-8 text-rose-500 mx-auto" />
-                          <h4 className="text-xs font-bold">Analysis Failed</h4>
-                          <p className="text-[10px] text-slate-400 leading-normal">{analysisError}</p>
-                        </div>
-                      ) : (
-                        <div className="text-center py-6 text-slate-500">
-                          <FileImage className="w-8 h-8 mx-auto text-slate-700 mb-2" />
-                          <p className="text-xs font-medium">No active analysis</p>
-                          <p className="text-[10px] text-slate-600 mt-0.5">Upload worksheet pages to start evaluation</p>
-                        </div>
-                      )}
-                    </div>
+                        )}
+                      </div>
+                    )}
                   </div>
                 </div>
 
@@ -719,53 +711,78 @@ export default function DashboardPage() {
                         <Loader2 className="w-6 h-6 animate-spin text-slate-700" />
                       </div>
                     ) : studentHistory.length > 0 ? (
-                      studentHistory.map((hist) => (
-                        <div 
-                          key={hist.id} 
-                          className="bg-[#111827]/40 border border-slate-800 rounded-2xl p-5 space-y-3 text-left transition-all duration-200 hover:border-slate-700"
-                        >
-                          <div className="flex justify-between items-start border-b border-slate-800/60 pb-2">
-                            <div className="text-left text-[10px] text-slate-400">
-                              <span className="font-semibold text-slate-300">Evaluation Run:</span> <span className="font-mono text-slate-400">{hist.id.substring(0, 8)}...</span>
-                            </div>
-                            <div className="text-right text-[10px] text-slate-500">
-                              <span className="font-semibold text-slate-400 block">{hist.teacher_name}</span>
-                              <span>{new Date(hist.created_at).toLocaleDateString()} {new Date(hist.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
-                            </div>
-                          </div>
+                      studentHistory.map((hist) => {
+                        const isNew = hist.id === newlyAddedId;
+                        const pages = getPagesFromRecord(hist.questions);
 
-                          <div className="space-y-2">
-                            {hist.questions.map((q) => (
-                              <div key={q.question_number} className="p-2.5 rounded-lg bg-[#090d16] border border-slate-800/80 text-xs space-y-1">
-                                <div className="flex justify-between items-center">
-                                  <span className="font-semibold text-slate-300">Question {q.question_number}</span>
-                                  {q.is_correct ? (
-                                    <span className="text-emerald-400 font-bold">✓</span>
-                                  ) : (
-                                    <span className="text-rose-400 font-bold">✗</span>
-                                  )}
-                                </div>
-                                {!q.is_correct && (
-                                  <div className="text-[11px] text-slate-400 space-y-0.5 pt-1.5 border-t border-slate-800/30 pb-1">
-                                    <p>Correction: <strong className="text-emerald-400">{q.correct_answer}</strong></p>
-                                    <p>Mistake: {q.mistake_type}</p>
-                                    <p>Topic: <span className="text-indigo-400">{q.topic_tag}</span></p>
-                                  </div>
+                        return (
+                          <div 
+                            key={hist.id} 
+                            className={`bg-[#111827]/40 border rounded-2xl p-5 space-y-4 text-left transition-all duration-300 hover:border-slate-700 ${
+                              isNew 
+                                ? 'border-emerald-500 bg-emerald-950/10 shadow-lg shadow-emerald-500/5 ring-1 ring-emerald-500/30' 
+                                : 'border-slate-800'
+                            }`}
+                          >
+                            <div className="flex justify-between items-start border-b border-slate-800/60 pb-2.5">
+                              <div className="text-left text-[10px] text-slate-400">
+                                {isNew && (
+                                  <span className="inline-block bg-emerald-500/20 text-emerald-400 text-[9px] font-extrabold px-1.5 py-0.5 rounded border border-emerald-500/30 uppercase tracking-wider mr-2 animate-bounce">
+                                    New Feedback Run
+                                  </span>
                                 )}
-                                <details className="group mt-2 border-t border-slate-800/30 pt-1.5">
-                                  <summary className="cursor-pointer text-[10px] text-indigo-400 hover:text-indigo-300 font-semibold select-none flex items-center gap-1 outline-none">
-                                    <span>AI Reasoning Logs</span>
-                                    <span className="text-[8px] transition-transform group-open:rotate-180">▼</span>
-                                  </summary>
-                                  <div className="mt-1.5 p-2 bg-[#080c14]/90 border border-slate-800/80 rounded text-[10px] text-slate-400 leading-normal font-mono whitespace-pre-wrap">
-                                    {q.scratchpad || 'No step-by-step reasoning logs recorded for this item.'}
-                                  </div>
-                                </details>
+                                <span className="font-semibold text-slate-300">Run ID:</span> <span className="font-mono text-slate-400">{hist.id.substring(0, 8)}...</span>
                               </div>
-                            ))}
+                              <div className="text-right text-[10px] text-slate-500">
+                                <span className="font-semibold text-slate-400 block">{hist.teacher_name}</span>
+                                <span>{new Date(hist.created_at).toLocaleDateString()} {new Date(hist.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                              </div>
+                            </div>
+
+                            <div className="space-y-4">
+                              {pages.map((p) => (
+                                <div key={p.page_number} className="space-y-2.5">
+                                  <div className="text-[10px] uppercase tracking-wider font-extrabold text-indigo-400/90 flex items-center gap-1.5 pb-1 border-b border-slate-800/40">
+                                    <span>Page {p.page_number}</span>
+                                  </div>
+                                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
+                                    {(p.questions || []).map((q) => (
+                                      <div key={q.question_number} className="p-3 bg-[#090d16] border border-slate-800/80 rounded-xl text-left space-y-1.5 text-xs">
+                                        <div className="flex justify-between items-center">
+                                          <span className="font-semibold text-slate-300">Question {q.question_number}</span>
+                                          {q.is_correct ? (
+                                            <span className="text-emerald-400 font-bold flex items-center gap-1">✓ <span className="text-[10px] font-semibold text-emerald-500">Correct</span></span>
+                                          ) : (
+                                            <span className="text-rose-400 font-bold flex items-center gap-1">✗ <span className="text-[10px] font-semibold text-rose-500">Incorrect</span></span>
+                                          )}
+                                        </div>
+                                        {!q.is_correct && (
+                                          <div className="pt-2 border-t border-slate-800/40 text-slate-300 space-y-1 mt-1 pb-1">
+                                            <p><span className="text-[10px] text-slate-500 uppercase tracking-wider block">Correct Answer:</span> <strong className="text-emerald-400">{q.correct_answer || 'N/A'}</strong></p>
+                                            <p><span className="text-[10px] text-slate-500 uppercase tracking-wider block">Mistake Details:</span> {q.mistake_type}</p>
+                                            <span className="inline-block bg-indigo-950 text-indigo-400 px-1.5 py-0.5 rounded text-[9px] font-bold border border-indigo-900/30 mt-1">
+                                              {q.topic_tag}
+                                            </span>
+                                          </div>
+                                        )}
+                                        <details className="group mt-2 border-t border-slate-800/40 pt-2">
+                                          <summary className="cursor-pointer text-[10px] text-indigo-400 hover:text-indigo-300 font-semibold select-none flex items-center gap-1 outline-none">
+                                            <span>View detailed explanation</span>
+                                            <span className="text-[8px] transition-transform group-open:rotate-180">▼</span>
+                                          </summary>
+                                          <div className="mt-1.5 p-2 bg-[#080c14]/90 border border-slate-800/80 rounded text-[10px] text-slate-400 leading-normal font-mono whitespace-pre-wrap">
+                                            {q.explanation || 'No step-by-step reasoning logs recorded for this item.'}
+                                          </div>
+                                        </details>
+                                      </div>
+                                    ))}
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
                           </div>
-                        </div>
-                      ))
+                        );
+                      })
                     ) : (
                       <div className="text-center py-12 border border-dashed border-slate-800 rounded-2xl text-slate-500 text-xs">
                         No previous feedback stored for this student.
