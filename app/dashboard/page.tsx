@@ -745,7 +745,7 @@ export default function DashboardPage() {
                                 className="w-full bg-indigo-600 hover:bg-indigo-500 disabled:bg-indigo-600/50 text-white font-bold py-3 rounded-xl text-xs transition-all flex items-center justify-center gap-2 border border-indigo-500/20 shadow-lg shadow-indigo-600/10"
                               >
                                 <Sparkles className="w-4 h-4 animate-pulse text-indigo-200" />
-                                <span>Analyze complete worksheet with GPT-4o</span>
+                                <span>Analyze complete worksheet</span>
                               </button>
                             </div>
                           </div>
