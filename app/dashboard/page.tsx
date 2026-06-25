@@ -17,11 +17,16 @@ interface Student {
 
 interface QuestionFeedback {
   question_number: string;
+  subject?: string;
+  question_text?: string;
+  student_answer?: string;
   is_correct: boolean;
   correct_answer: string;
   mistake_type: string;
-  topic_tag: string;
+  topic_tag?: string;
+  topic_tags?: string[];
   explanation: string;
+  needs_teacher_review?: boolean;
 }
 
 interface PageFeedback {
@@ -813,36 +818,104 @@ export default function DashboardPage() {
                                     <span>Page {p.page_number}</span>
                                   </div>
                                   <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
-                                    {(p.questions || []).map((q) => (
-                                      <div key={q.question_number} className="p-3 bg-[#090d16] border border-slate-800/80 rounded-xl text-left space-y-1.5 text-xs">
-                                        <div className="flex justify-between items-center">
-                                          <span className="font-semibold text-slate-300">Question {q.question_number}</span>
-                                          {q.is_correct ? (
-                                            <span className="text-emerald-400 font-bold flex items-center gap-1">✓ <span className="text-[10px] font-semibold text-emerald-500">Correct</span></span>
-                                          ) : (
-                                            <span className="text-rose-400 font-bold flex items-center gap-1">✗ <span className="text-[10px] font-semibold text-rose-500">Incorrect</span></span>
+                                    {(p.questions || []).map((q) => {
+                                      const topics = q.topic_tags || (q.topic_tag ? [q.topic_tag] : []);
+                                      
+                                      let subjectColor = 'bg-slate-950 text-slate-400 border-slate-900';
+                                      if (q.subject) {
+                                        const subLower = q.subject.toLowerCase();
+                                        if (subLower.includes('math') || subLower.includes('數')) {
+                                          subjectColor = 'bg-blue-950/80 text-blue-400 border-blue-900/30';
+                                        } else if (subLower.includes('eng') || subLower.includes('英')) {
+                                          subjectColor = 'bg-purple-950/80 text-purple-400 border-purple-900/30';
+                                        } else if (subLower.includes('chin') || subLower.includes('中')) {
+                                          subjectColor = 'bg-amber-950/80 text-amber-400 border-amber-900/30';
+                                        }
+                                      }
+
+                                      return (
+                                        <div 
+                                          key={q.question_number} 
+                                          className={`p-3 bg-[#090d16] border rounded-xl text-left space-y-2 text-xs transition-all ${
+                                            q.needs_teacher_review 
+                                              ? 'border-yellow-500/40 bg-yellow-950/5' 
+                                              : q.is_correct 
+                                                ? 'border-slate-800/80' 
+                                                : 'border-rose-950/40 bg-rose-950/5'
+                                          }`}
+                                        >
+                                          <div className="flex justify-between items-center flex-wrap gap-1.5 pb-2 border-b border-slate-800/40">
+                                            <div className="flex items-center gap-2">
+                                              <span className="font-bold text-slate-300">Question {q.question_number}</span>
+                                              {q.subject && (
+                                                <span className={`px-1.5 py-0.5 rounded text-[9px] font-semibold border ${subjectColor}`}>
+                                                  {q.subject}
+                                                </span>
+                                              )}
+                                            </div>
+                                            
+                                            <div className="flex items-center gap-1.5">
+                                              {q.needs_teacher_review ? (
+                                                <span className="bg-yellow-950 text-yellow-400 px-1.5 py-0.5 rounded text-[9px] font-bold border border-yellow-900/30 animate-pulse">
+                                                  ⚠️ Needs Review
+                                                </span>
+                                              ) : q.is_correct ? (
+                                                <span className="text-emerald-400 font-bold flex items-center gap-1">
+                                                  ✓ <span className="text-[10px] font-semibold text-emerald-500">Correct</span>
+                                                </span>
+                                              ) : (
+                                                <span className="text-rose-400 font-bold flex items-center gap-1">
+                                                  ✗ <span className="text-[10px] font-semibold text-rose-500">Incorrect</span>
+                                                </span>
+                                              )}
+                                            </div>
+                                          </div>
+
+                                          <div className="space-y-1.5 pt-0.5">
+                                            <p className="text-slate-400">
+                                              <span className="text-[10px] text-slate-500 uppercase tracking-wider block font-medium">Student's Answer:</span>
+                                              <span className="text-slate-200 font-mono font-medium">{q.student_answer !== undefined ? (q.student_answer || 'Blank') : 'N/A'}</span>
+                                            </p>
+
+                                            {!q.is_correct && (
+                                              <div className="space-y-1 bg-[#c1220]/5 px-2.5 py-1.5 rounded-lg border border-rose-950/20 mt-1">
+                                                <p>
+                                                  <span className="text-[9px] text-slate-500 uppercase tracking-wider block font-medium">Correct Answer:</span>
+                                                  <strong className="text-emerald-400 font-mono">{q.correct_answer || 'N/A'}</strong>
+                                                </p>
+                                                <p>
+                                                  <span className="text-[9px] text-slate-500 uppercase tracking-wider block font-medium">Mistake Details:</span>
+                                                  <span className="text-slate-300 font-medium">{q.mistake_type}</span>
+                                                </p>
+                                              </div>
+                                            )}
+                                          </div>
+
+                                          {topics.length > 0 && (
+                                            <div className="flex flex-wrap gap-1 pt-1">
+                                              {topics.map((tag, idx) => (
+                                                <span 
+                                                  key={idx} 
+                                                  className="bg-indigo-950/60 text-indigo-400 px-1.5 py-0.5 rounded text-[8px] font-bold border border-indigo-900/30"
+                                                >
+                                                  {tag}
+                                                </span>
+                                              ))}
+                                            </div>
                                           )}
+
+                                          <details className="group mt-1.5 border-t border-slate-900/60 pt-2">
+                                            <summary className="cursor-pointer text-[10px] text-indigo-400 hover:text-indigo-300 font-semibold select-none flex items-center gap-1 outline-none">
+                                              <span>View detailed explanation</span>
+                                              <span className="text-[8px] transition-transform group-open:rotate-180">▼</span>
+                                            </summary>
+                                            <div className="mt-1.5 p-2 bg-[#080c14]/90 border border-slate-800/80 rounded text-[10px] text-slate-400 leading-normal font-mono whitespace-pre-wrap">
+                                              {q.explanation || 'No step-by-step reasoning logs recorded for this item.'}
+                                            </div>
+                                          </details>
                                         </div>
-                                        {!q.is_correct && (
-                                          <div className="pt-2 border-t border-slate-800/40 text-slate-300 space-y-1 mt-1 pb-1">
-                                            <p><span className="text-[10px] text-slate-500 uppercase tracking-wider block">Correct Answer:</span> <strong className="text-emerald-400">{q.correct_answer || 'N/A'}</strong></p>
-                                            <p><span className="text-[10px] text-slate-500 uppercase tracking-wider block">Mistake Details:</span> {q.mistake_type}</p>
-                                            <span className="inline-block bg-indigo-950 text-indigo-400 px-1.5 py-0.5 rounded text-[9px] font-bold border border-indigo-900/30 mt-1">
-                                              {q.topic_tag}
-                                            </span>
-                                          </div>
-                                        )}
-                                        <details className="group mt-2 border-t border-slate-800/40 pt-2">
-                                          <summary className="cursor-pointer text-[10px] text-indigo-400 hover:text-indigo-300 font-semibold select-none flex items-center gap-1 outline-none">
-                                            <span>View detailed explanation</span>
-                                            <span className="text-[8px] transition-transform group-open:rotate-180">▼</span>
-                                          </summary>
-                                          <div className="mt-1.5 p-2 bg-[#080c14]/90 border border-slate-800/80 rounded text-[10px] text-slate-400 leading-normal font-mono whitespace-pre-wrap">
-                                            {q.explanation || 'No step-by-step reasoning logs recorded for this item.'}
-                                          </div>
-                                        </details>
-                                      </div>
-                                    ))}
+                                      );
+                                    })}
                                   </div>
                                 </div>
                               ))}
