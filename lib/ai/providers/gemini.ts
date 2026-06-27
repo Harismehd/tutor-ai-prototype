@@ -13,7 +13,7 @@ export class GeminiProvider extends BaseAIProvider {
       throw new Error('GEMINI_API_KEY environment variable is not defined. Please check your setup.');
     }
     this.genAI = new GoogleGenerativeAI(apiKey);
-    this.modelName = process.env.GEMINI_MODEL || 'gemini-2.5-flash';
+    this.modelName = process.env.GEMINI_MODEL || 'gemini-1.5-pro-latest';
   }
 
   async analyzeWorksheet(imagesBase64: string[]): Promise<AIVisionFeedback> {
