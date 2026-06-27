@@ -8,7 +8,7 @@ export class AIVisionFactory {
    * Defaults to 'openai' if not specified (primary production model).
    */
   static getProvider(): AIVisionProvider {
-    const provider = (process.env.DEFAULT_AI_PROVIDER || 'openai').toLowerCase();
+    const provider = (process.env.DEFAULT_AI_PROVIDER || 'gemini').toLowerCase();
 
     switch (provider) {
       case 'openai':

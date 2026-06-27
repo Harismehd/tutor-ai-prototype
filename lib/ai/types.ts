@@ -1,15 +1,10 @@
 export interface AIQuestionFeedback {
   question_number: string;
-  subject: string;
-  question_text: string;
-  student_answer: string;
-  correct_answer: string;
   is_correct: boolean;
+  correct_answer: string;
   mistake_type: string;
-  topic_tags: string[];
-  topic_tag?: string;
+  topic_tag: string;
   explanation: string;
-  needs_teacher_review: boolean;
 }
 
 export interface AIPageFeedback {
@@ -24,23 +19,8 @@ export interface AIVisionFeedback {
 export interface AIVisionProvider {
   /**
    * Analyzes an array of worksheet images (representing pages) and returns structured question-by-question feedback.
+   * @param imagesBase64 Array of base64 data URLs (e.g., "data:image/png;base64,...") or raw base64 strings representing worksheet pages.
+   * @returns A promise resolving to structured AIVisionFeedback.
    */
   analyzeWorksheet(imagesBase64: string[]): Promise<AIVisionFeedback>;
-
-  /**
-   * Generates a structured completion from visual input (images) using a specified system and user prompt.
-   */
-  generateVisionStructuredCompletion<T>(
-    imagesBase64: string[],
-    systemPrompt: string,
-    userPrompt: string
-  ): Promise<T>;
-
-  /**
-   * Generates a structured completion from text-only input.
-   */
-  generateTextStructuredCompletion<T>(
-    systemPrompt: string,
-    userPrompt: string
-  ): Promise<T>;
 }

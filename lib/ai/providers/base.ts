@@ -3,17 +3,6 @@ import { AIVisionFeedback, AIVisionProvider } from '../types';
 export abstract class BaseAIProvider implements AIVisionProvider {
   abstract analyzeWorksheet(imagesBase64: string[]): Promise<AIVisionFeedback>;
 
-  abstract generateVisionStructuredCompletion<T>(
-    imagesBase64: string[],
-    systemPrompt: string,
-    userPrompt: string
-  ): Promise<T>;
-
-  abstract generateTextStructuredCompletion<T>(
-    systemPrompt: string,
-    userPrompt: string
-  ): Promise<T>;
-
   /**
    * Helper to parse data URLs into MIME type and raw base64 data.
    */
