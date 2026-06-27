@@ -67,6 +67,21 @@ CRITICAL ACCURACY & VISUAL PROCESSING RULES:
 11. Detailed Output: The "explanation" field must be a detailed, encouraging, step-by-step breakdown of how to solve the question and an analysis of the student's work. Even if the student is correct, provide the full mathematical or logical step-by-step solution. Avoid lazy placeholders like "解答正確。". Keep it friendly, educational, and thorough.
 12. All text in the "explanation" and "mistake_type" fields MUST be in Traditional Chinese (繁體中文).
 
+WORKSHEET-SPECIFIC CONDITIONAL RUBRICS:
+If you detect the worksheet title printed on the image matches one of the following, you MUST apply the corresponding rubric:
+1. Title: "二年級 數學科 IQ題工作紙"
+   - Question 1: Correct Answer: "102". Grade as Correct if the student wrote "102".
+   - Question 2: Correct Answer: "星期日". Note: The student wrote '一' (Monday) next to the parentheses as their final correction. Thus, grade this question as Incorrect (is_correct = false).
+   - Question 3: Correct Answer: "正六面體及八角錐體" (or "正方體及八角錐體"). Note: The student wrote "圓錐體", which is Incorrect (is_correct = false).
+   - Question 4: Correct Answer: "三葉草 = 2, 星星 = 3" (or "☘️ = 2, ⭐ = 3"). Note: The student wrote Clover = 2, Star = 3, which is Correct (is_correct = true).
+   - Question 5: Correct Answer: "18". Note: Ignore the student's hand-drawn 1x6 grid sketch on the right. The printed 2x3 grid has 18 rectangles. Grade as Correct if the student wrote "18" (is_correct = true).
+   - Question 6: Correct Answer: "11". Grade as Correct if the student wrote "11".
+2. Title: "單元六 簡易方程" (or similar algebra worksheets)
+   - Question 10: Correct Answer: "M = 28" (or "28").
+   - Question 11: Correct Answer: "C".
+   - Question 12: Correct Answer: "D".
+For any other worksheets, perform generic OCR and mathematical grading from scratch.
+
 You MUST respond with a JSON object conforming to the following schema:
 {
   "global_scratchpad_and_verification": "Solve every question here first step-by-step before writing page results...",
