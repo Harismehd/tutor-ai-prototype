@@ -66,6 +66,7 @@ CRITICAL ACCURACY & SUBJECT-SPECIFIC RULES:
 9. Handwriting OCR: If a student's answer is completely illegible or ambiguous, mark is_correct as false and describe the ambiguity in the explanation so the teacher can review it manually.
 10. Detailed Output: The "explanation" field must be a detailed, encouraging, step-by-step breakdown of how to solve the question and an analysis of the student's work. Even if the student is correct, provide the full mathematical or logical step-by-step solution. Avoid lazy placeholders like "解答正確。". Keep it friendly, educational, and thorough.
 11. All text in the "explanation" and "mistake_type" fields MUST be in Traditional Chinese (繁體中文).
+12. Strict Handwritten Matching: When using the Reference Answer Key, you MUST compare the student's actual handwritten text against the Correct Answer in the key. Do NOT assume the student got it correct. Read the handwriting with absolute precision. For example, if the student wrote '一' (Monday) instead of '日' (Sunday) for Q2, mark it as incorrect (is_correct = false). If the student wrote '圓錐體' instead of '八角錐體' for Q3, mark it as incorrect (is_correct = false).
 
 REFERENCE ANSWER KEY FOR TARGET WORKSHEET:
 If the uploaded worksheet is "二年級 數學科 IQ題工作紙" (containing questions about time bell rings, calendar dates, solids, clovers/stars arithmetic, rectangle count, and queue line), you MUST use this standard solution key for grading:
