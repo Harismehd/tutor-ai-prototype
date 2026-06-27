@@ -823,15 +823,15 @@ export default function DashboardPage() {
                                             <span className="text-rose-400 font-bold flex items-center gap-1">✗ <span className="text-[10px] font-semibold text-rose-500">Incorrect</span></span>
                                           )}
                                         </div>
-                                        {!q.is_correct && (
-                                          <div className="pt-2 border-t border-slate-800/40 text-slate-300 space-y-1 mt-1 pb-1">
-                                            <p><span className="text-[10px] text-slate-500 uppercase tracking-wider block">Correct Answer:</span> <strong className="text-emerald-400">{q.correct_answer || 'N/A'}</strong></p>
+                                        <div className="pt-2 border-t border-slate-800/40 text-slate-300 space-y-1 mt-1 pb-1">
+                                          <p><span className="text-[10px] text-slate-500 uppercase tracking-wider block">Correct Answer:</span> <strong className="text-emerald-400">{q.correct_answer || 'N/A'}</strong></p>
+                                          {!q.is_correct && (
                                             <p><span className="text-[10px] text-slate-500 uppercase tracking-wider block">Mistake Details:</span> {q.mistake_type}</p>
-                                            <span className="inline-block bg-indigo-950 text-indigo-400 px-1.5 py-0.5 rounded text-[9px] font-bold border border-indigo-900/30 mt-1">
-                                              {q.topic_tag}
-                                            </span>
-                                          </div>
-                                        )}
+                                          )}
+                                          <span className="inline-block bg-indigo-950 text-indigo-400 px-1.5 py-0.5 rounded text-[9px] font-bold border border-indigo-900/30 mt-1">
+                                            {q.topic_tag}
+                                          </span>
+                                        </div>
                                         <details className="group mt-2 border-t border-slate-800/40 pt-2">
                                           <summary className="cursor-pointer text-[10px] text-indigo-400 hover:text-indigo-300 font-semibold select-none flex items-center gap-1 outline-none">
                                             <span>View detailed explanation</span>

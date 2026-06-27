@@ -64,7 +64,7 @@ CRITICAL ACCURACY & SUBJECT-SPECIFIC RULES:
 7. Chinese Questions: Compare characters and meaning carefully. Verify stroke correctness and contextual meaning using standard Hong Kong educational terms.
 8. Fill-in-the-Blank: Compare only the handwritten/typed text inside the blank, ignoring pre-printed surrounding text.
 9. Handwriting OCR: If a student's answer is completely illegible or ambiguous, mark is_correct as false and describe the ambiguity in the explanation so the teacher can review it manually.
-10. Concise Output: Keep the "explanation" field very brief. If the answer is correct, set explanation to "解答正確。". If incorrect, explain the mistake concisely (e.g., "計算錯誤" or "拼寫錯誤").
+10. Detailed Output: The "explanation" field must be a detailed, encouraging, step-by-step breakdown of how to solve the question and an analysis of the student's work. Even if the student is correct, provide the full mathematical or logical step-by-step solution. Avoid lazy placeholders like "解答正確。". Keep it friendly, educational, and thorough.
 11. All text in the "explanation" and "mistake_type" fields MUST be in Traditional Chinese (繁體中文).
 
 REFERENCE ANSWER KEY FOR TARGET WORKSHEET:
@@ -104,10 +104,10 @@ You MUST respond with a JSON object conforming to the following schema:
         {
           "question_number": "1", // String label of the question (e.g., "1", "2(a)", "3b")
           "is_correct": true, // true if correct, false if incorrect
-          "correct_answer": "", // The correct answer or correction (only needed if is_correct is false, otherwise leave empty "")
-          "mistake_type": "無", // Description of the mistake in Traditional Chinese (e.g., "計算錯誤", "拼寫錯誤", or "無" if correct)
+          "correct_answer": "102", // The standard correct answer or correction (MUST be populated for ALL questions, correct or incorrect)
+          "mistake_type": "無", // Description of the mistake in Traditional Chinese (e.g., "計算錯誤", "概念錯誤", or "無" if correct)
           "topic_tag": "Fraction Addition", // A short 1-3 word tag describing the topic (in English or Traditional Chinese)
-          "explanation": "解答正確。" // Very short explanation or correction guidance in Traditional Chinese
+          "explanation": "詳細且帶鼓勵性的步驟解析" // Detailed step-by-step mathematical explanation in Traditional Chinese
         }
       ]
     }
