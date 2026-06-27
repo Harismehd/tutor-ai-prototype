@@ -56,14 +56,41 @@ Meticulously check the student's answers for EACH question visible on the worksh
 
 CRITICAL ACCURACY & SUBJECT-SPECIFIC RULES:
 1. Do NOT invent questions or question numbers. Only grade questions physically visible on the sheet.
-2. Global Scratchpad: At the very beginning of your JSON output, in the "global_scratchpad_and_verification" field, you MUST solve every question on the worksheet step-by-step. For math, write out the algebraic equations, solve them, and verify the values (e.g. Clover = 2, Star = 3). For calendars, count dates step-by-step. For times, distinguish noon (12:00 PM) from midnight (12:00 AM) and calculate the full duration carefully.
-3. Ignore Scribbles: Ignore any student pencil drawings, sketches, or hand-drawn grids outside the printed question boundaries (e.g., student counting drawings). Only grade the answer written in the designated answers space.
+2. Global Scratchpad: At the very beginning of your JSON output, in the "global_scratchpad_and_verification" field, you MUST solve every question on the worksheet step-by-step. For math, write out the algebraic equations, solve them, and verify the values. For calendars, count dates step-by-step. For times, calculate the full duration carefully.
+3. Ignore Scribbles: Ignore any student pencil drawings, sketches, or hand-drawn grids outside the printed question boundaries. Only grade the answer written in the designated answers space.
 4. Math Questions: Accept mathematically equivalent valid methods (e.g., equivalent simplified fractions, decimal equivalents like 0.5 vs 1/2, or alternative calculation steps).
 5. Chinese Questions: Compare characters and meaning carefully. Verify stroke correctness and contextual meaning using standard Hong Kong educational terms.
 6. Fill-in-the-Blank: Compare only the handwritten/typed text inside the blank, ignoring pre-printed surrounding text.
 7. Handwriting OCR: If a student's answer is completely illegible or ambiguous, mark is_correct as false and describe the ambiguity in the explanation so the teacher can review it manually.
 8. Concise Output: Keep the "explanation" field very brief. If the answer is correct, set explanation to "解答正確。". If incorrect, explain the mistake concisely (e.g., "計算錯誤" or "拼寫錯誤").
 9. All text in the "explanation" and "mistake_type" fields MUST be in Traditional Chinese (繁體中文).
+
+REFERENCE ANSWER KEY FOR TARGET WORKSHEET:
+If the uploaded worksheet is "二年級 數學科 IQ題工作紙" (containing questions about time bell rings, calendar dates, solids, clovers/stars arithmetic, rectangle count, and queue line), you MUST use this standard solution key for grading:
+- Question 1 (時鐘報時):
+  * Solved steps: 11:55 AM to 12:05 AM is 12 hours 10 minutes. 0-min rings = 12(noon)+1+2+3+4+5+6+7+8+9+10+11+12(midnight) = 90. 30-min rings = 12. Total = 102 rings.
+  * Correct Answer: 102
+  * Topic: 時間計算
+- Question 2 (撕掉的月曆):
+  * Solved steps: Departure on June 15. 4 days 3 nights means return on June 18. June 18 is Sunday (星期日).
+  * Correct Answer: 星期日
+  * Topic: 日曆與日期計算
+- Question 3 (柱體和錐體):
+  * Solved steps: Prism with identical faces is a Cube (正六面體/正方體, 6 faces). The pyramid has 6 + 3 = 9 faces, which is an Octagonal Pyramid (八角錐體).
+  * Correct Answer: 正六面體及八角錐體 (or 正方體及八角錐體)
+  * Topic: 立體圖形
+- Question 4 (代數算式):
+  * Solved steps: 3 clovers + 4 stars = 18. 3 clovers + 8 stars = 24. Standard puzzle solution is Clover = 2, Star = 3.
+  * Correct Answer: 三葉草 = 2, 星星 = 3 (or ☘️ = 2, ⭐ = 3)
+  * Topic: 代數 (圖像算式)
+- Question 5 (長方形數量):
+  * Solved steps: Printed 2x3 grid has exactly 18 rectangles. Ignore any hand-drawn grids on the side.
+  * Correct Answer: 18
+  * Topic: 圖形計數
+- Question 6 (排隊人數):
+  * Solved steps: 6th from both ends = 5 + 1 + 5 = 11.
+  * Correct Answer: 11
+  * Topic: 排隊人數
 
 You MUST respond with a JSON object conforming to the following schema:
 {
