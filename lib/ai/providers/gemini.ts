@@ -50,10 +50,10 @@ CRITICAL ACCURACY & VISUAL PROCESSING RULES:
 WORKSHEET-SPECIFIC CONDITIONAL RUBRICS:
 If you detect the worksheet title printed on the image matches one of the following, you MUST apply the corresponding rubric:
 1. Title: "二年級 數學科 IQ題工作紙"
-   - Question 1: Correct Answer: "102". Grade as Correct if the student wrote "102".
+   - Question 1: Correct Answer: "102". The time span is from 11:55 AM to 12:05 AM (midnight) of the next day, which is 12 hours and 10 minutes. The clock rings: (1) On every hour: 12:00 PM (12 times), 1:00 PM to 11:00 PM (1+2+...+11 = 66 times), and 12:00 AM midnight (12 times). Total整點 = 90 times. (2) On every half-hour: 12:30 PM, 1:30 PM, ..., 11:30 PM (12 times). Overall sum = 90 + 12 = 102 times. Ensure your explanation reflects these exact steps.
    - Question 2: Correct Answer: "星期日". Note: The student wrote '一' (Monday) next to the parentheses as their final correction. Thus, grade this question as Incorrect (is_correct = false).
    - Question 3: Correct Answer: "正六面體及八角錐體" (or "正方體及八角錐體"). Note: The student wrote "圓錐體", which is Incorrect (is_correct = false).
-   - Question 4: Correct Answer: "三葉草 = 2, 星星 = 3" (or "☘️ = 2, ⭐ = 3"). Note: The student wrote Clover = 2, Star = 3, which is Correct (is_correct = true).
+   - Question 4: Correct Answer: "三葉草 = 2, 星星 = 3" (or "☘️ = 2, ⭐ = 3"). The printed equations on the worksheet are: (1) 3 clovers + 4 stars = 18, (2) 3 clovers + 6 stars = 24. Solve: (2) - (1) -> 2 stars = 6 -> Star = 3. Substitute Star = 3 into (1) -> 3 clovers + 12 = 18 -> 3 clovers = 6 -> Clover = 2. Ensure your explanation uses these exact equations and steps.
    - Question 5: Correct Answer: "18". Note: Ignore the student's hand-drawn 1x6 grid sketch on the right. The printed 2x3 grid has 18 rectangles. Grade as Correct if the student wrote "18" (is_correct = true).
    - Question 6: Correct Answer: "11". Grade as Correct if the student wrote "11".
 2. Title: "單元六 簡易方程" (or similar algebra worksheets)
