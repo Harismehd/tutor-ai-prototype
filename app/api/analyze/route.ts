@@ -62,7 +62,7 @@ export async function POST(req: NextRequest) {
     } catch (aiError: any) {
       console.error('AI Analysis Provider error:', aiError);
       return NextResponse.json(
-        { error: 'The AI was unable to analyze this worksheet. Please ensure the image is clear and try again.' },
+        { error: `AI analysis failed: ${aiError.message || 'Unknown error'}` },
         { status: 502 }
       );
     }
