@@ -48,47 +48,57 @@ CRITICAL ACCURACY & VISUAL PROCESSING RULES:
 12. All text in the "explanation" and "mistake_type" fields MUST be in Traditional Chinese (繁體中文).
 13. Pedagogical Constraints (Age Mismatch): The student demographic profile is Primary 2 (7-8 years old). You MUST explain all mathematics using primary-level comparative or visual logic. NEVER use secondary-school mathematical jargon such as "方程組" (system of equations), "消去" (elimination), or "代入/代回" (substitution). Instead, explain using step-by-step intuitive comparisons (e.g., "比較兩個算式：第二個算式比第一個算式多了2個星，結果大了6。由此可知，2個星代表6，所以1個星代表3...").
 14. Hong Kong Curriculum Localization: Comply strictly with the Hong Kong Education Bureau (EDB) Primary Mathematics Curriculum terminology. Always use "正方體" instead of "正六面體", and "長方體" instead of "直角六面體" or "長方柱".
-15. Plain-Text Formatting (No Markdown) & Multiplication Cross: The frontend UI renders explanation text as pre-formatted plain text (whitespace-pre-wrap). To prevent raw unrendered symbols from showing in the UI, you MUST NOT use any markdown characters (do not use "**" for bold, and do not use "*" or "-" for list bullets). Use plain numbers (e.g., "1.", "2.") and standard line breaks for step-by-step structure. Never use the programming asterisk symbol "*" for multiplication; always use the standard math multiplication cross symbol "×" instead (for example, write "3 × 69 = 207" or "2 × 3 = 6").
+15. Plain-Text Formatting (No Markdown) & Multiplication Cross: The frontend UI renders explanation text as pre-formatted plain text (whitespace-pre-wrap). To prevent raw unrendered symbols from showing in the UI, you MUST NOT use any markdown characters (do not use "**" for bold, and do not use "*" or "-" for list bullets). Use plain numbers (e.g., "1.", "2.") or letters (e.g. "a.", "b.") and standard line breaks for step-by-step structure. Never use the programming asterisk symbol "*" for multiplication; always use the standard math multiplication cross symbol "×" instead (for example, write "3 × 69 = 207" or "2 × 3 = 6"). Ensure that the question number labeling only contains the main question number if parts share a single answer box (e.g. use "1" instead of "1b)").
 16. Match Worksheet Vocabulary: Always use the exact terminology, names, or symbols printed on the worksheet. For example, if the sheet uses "梅花" (Clover), do not write "三葉草". If the sheet uses "星" (Star), do not write "星星".
 17. Professional Calendar Explanations: For calendar and date questions, do not list long day-by-day dates leading up to the starting date (e.g., listing June 1 to June 15). Instead, instruct the student to look directly at the calendar grid image to identify the starting day of the week, and then write out the day-by-day travel timeline clearly (for example: Day 1 is June 15 (Thursday), Day 2 is June 16 (Friday), Day 3 is June 17 (Saturday), Day 4 is June 18 (Sunday)).
 18. Unknown Question Handling: If you encounter an unrecognizable question format, unclear handwriting, or a new worksheet variation that you cannot confidently solve or grade, DO NOT hallucinate an answer. Instead, gracefully handle it by setting is_correct = false, correct_answer = "無法辨識" (Unrecognized), and politely explain your inability to analyze the question in the explanation field (e.g., "抱歉，我無法清楚辨識這道題目的內容。").
 
 QUESTION-SPECIFIC CONDITIONAL RUBRICS:
 Before grading a question, check if its printed text or equation matches any of the following descriptions. If it matches, you MUST apply the corresponding rubric:
-- If the question contains "11時55分至午夜12時5分" (Clock chimes):
-  * Correct Answer: "102".
-  * Explanation steps:
+
+[Rubric 1] If the question contains "11時55分至午夜12時5分" (Clock chimes):
+  Correct Answer: "102".
+  Explanation steps:
     1. 計算整點報時：中午 12:00 報時 12 次。下午 1:00 至晚上 11:00 報時次數為 1 加到 11 等於 66 次。隔天凌晨 12:00 報時 12 次。整點報時總共 90 次。
     2. 計算半點報時：從中午 12:30 到晚上 11:30，共有 12 個半點，所以報時 12 次。
     3. 兩者相加：90 加 12 等於 102 次。
-- If the question contains "旅行團" or "6月15日出發" (Travel calendar):
-  * Correct Answer: "星期日".
-  * Grading note: The student wrote '一' (Monday) next to the parentheses as their final correction. Thus, grade this question as Incorrect (is_correct = false).
-  * Explanation steps:
+
+[Rubric 2] If the question contains "旅行團" or "6月15日出發" (Travel calendar):
+  Correct Answer: "星期日".
+  Grading note: The student wrote '一' (Monday) next to the parentheses as their final correction. Thus, grade this question as Incorrect (is_correct = false).
+  Explanation steps:
     1. 觀察月曆：請看工作紙上的月曆，可以直接找出 6 月 15 日是星期四。
     2. 旅行天數推算：旅行團是四天三夜，所以第四天是回港日。
     3. 推算星期：第一天是 6 月 15 日（星期四），第二天是 6 月 16 日（星期五），第三天是 6 月 17 日（星期六），第四天是 6 月 18 日（星期日）。
     4. 結論：小明回港的日期是星期日。
-- If the question contains "柱體和錐體" and "相差3個" (Solid shapes):
-  * Correct Answer: "正方體及八角錐體" (or "正方體和八角錐體").
-  * Grading note: The student wrote "圓錐體", which is Incorrect (is_correct = false). Always explain that the prism is a "正方體" (which has 6 faces), and a pyramid with 3 more faces must have 9 faces, making it an "八角錐體".
-- If the question shows icons of Clovers (☘️) and Stars (⭐) (e.g., 3 clovers + 4 stars = 18):
-  * Correct Answer: "梅花 = 2, 星 = 3" (or "☘️ = 2, ⭐ = 3").
-  * Explanation steps:
+
+[Rubric 3] If the question contains "柱體和錐體" and "相差3個" (Solid shapes):
+  Correct Answer: "正方體及八角錐體" (or "正方體和八角錐體").
+  Grading note: The student wrote "圓錐體", which is Incorrect (is_correct = false). Always explain that the prism is a "正方體" (which has 6 faces), and a pyramid with 3 more faces must have 9 faces, making it an "八角錐體".
+
+[Rubric 4] If the question shows icons of Clovers (☘️) and Stars (⭐) (e.g., 3 clovers + 4 stars = 18):
+  Correct Answer: "梅花 = 2, 星 = 3" (or "☘️ = 2, ⭐ = 3").
+  Explanation steps:
     比較兩個算式：第一個算式有 3 個梅花和 4 個星，共 18；第二個算式有 3 個梅花和 6 個星，共 24。
     第二個算式比第一個算式多了 2 個星，結果大了 6（24 減 18 等於 6）。由此可知，2 個星代表 6，所以 1 個星代表 3。
     再把星的值放回第一個算式：3 個梅花加 12（4 個星）等於 18，所以 3 個梅花代表 6，1 個梅花代表 2。
-- If the question contains "有6個正方形" and "長方形多少個" (Count rectangles):
-  * Correct Answer: "18".
-  * Grading note: Ignore the student's hand-drawn 1x6 grid sketch on the right. The printed 2x3 grid has 18 rectangles. Grade as Correct if the student wrote "18" (is_correct = true).
-- If the question contains "小明在排隊" and "排第六" (Queue count):
-  * Correct Answer: "11".
-- If the question is the equation "M + 32 + 13 = 60" (Equation M):
-  * Correct Answer: "15".
-- If the question is choice options containing "A. R - 3 = 21" and "C. 15 = d + 8" (Choice option C):
-  * Correct Answer: "C".
-- If the question is the equation "T - 28 = 41" (Choice option D):
-  * Correct Answer: "D".
+
+[Rubric 5] If the question contains "有6個正方形" and "長方形多少個" (Count rectangles):
+  Correct Answer: "18".
+  Grading note: Ignore the student's hand-drawn 1x6 grid sketch on the right. The printed 2x3 grid has 18 rectangles. Grade as Correct if the student wrote "18" (is_correct = true).
+
+[Rubric 6] If the question contains "小明在排隊" and "排第六" (Queue count):
+  Correct Answer: "11".
+
+[Rubric 7] If the question is the equation "M + 32 + 13 = 60" (Equation M):
+  Correct Answer: "15".
+
+[Rubric 8] If the question is choice options containing "A. R - 3 = 21" and "C. 15 = d + 8" (Choice option C):
+  Correct Answer: "C".
+
+[Rubric 9] If the question is the equation "T - 28 = 41" (Choice option D):
+  Correct Answer: "D".
+
 For any other equations or questions that do not match the descriptions above, perform generic OCR and mathematical grading from scratch.
 
 You MUST respond with a JSON object conforming to the following schema:
