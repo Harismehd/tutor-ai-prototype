@@ -38,12 +38,27 @@ export interface ModelAdapter {
 
 const SOLVE_ATTEMPTS = 3;
 const SOLVE_TEMPERATURE = 0.6;
-const CONCURRENCY_LIMIT = 4;
+const QUESTION_CONCURRENCY_LIMIT = 4;
 
-export async function runGradingPipeline(adapter: ModelAdapter, imagesBase64: string[]): Promise<AIVisionFeedback> {
+/**
+ * Global cap on simultaneous in-flight calls to the provider, across ALL
+ * stages and ALL questions combined. Without this, a 6-question worksheet
+ * could fire ~12+ simultaneous requests (3 solve attempts x 4 concurrent
+ * questions), which blows through provider rate limits. Overridable via env
+ * for accounts on higher-tier rate limits.
+ */
+const GLOBAL_PROVIDER_CONCURRENCY = Number(process.env.AI_PIPELINE_MAX_CONCURRENCY) || 3;
+const MAX_RETRIES = 3;
+const RETRYABLE_PATTERN = /429|rate[ _-]?limit|quota|resource_exhausted|503|502|500|overloaded|timeout|econnreset|fetch failed|network/i;
+
+export async function runGradingPipeline(rawAdapter: ModelAdapter, imagesBase64: string[]): Promise<AIVisionFeedback> {
   if (!imagesBase64 || imagesBase64.length === 0) {
     throw new Error('At least one worksheet page image is required.');
   }
+
+  // Wrap the adapter once: every downstream call automatically gets
+  // global throttling + retry-with-backoff + visible error logging.
+  const adapter = withThrottleAndRetry(rawAdapter, GLOBAL_PROVIDER_CONCURRENCY);
 
   // ---- Stage 1: Segmentation + OCR (vision, one call, all pages) ----
   let rawQuestions: RawSegmentedQuestion[];
@@ -67,7 +82,7 @@ export async function runGradingPipeline(adapter: ModelAdapter, imagesBase64: st
   }
 
   // ---- Stages 2-4 run per-question, independently, with bounded concurrency ----
-  const gradedQuestions = await mapWithConcurrency(rawQuestions, CONCURRENCY_LIMIT, async (rq) => {
+  const gradedQuestions = await mapWithConcurrency(rawQuestions, QUESTION_CONCURRENCY_LIMIT, async (rq) => {
     return gradeSingleQuestion(adapter, rq);
   });
 
@@ -104,6 +119,23 @@ async function gradeSingleQuestion(adapter: ModelAdapter, rq: RawSegmentedQuesti
       )
     );
     const validAttempts = attempts.filter((a): a is SolveAttempt => a !== null);
+
+    // All 3 attempts failing after retries means the provider was
+    // unreachable/rate-limited for this question, NOT that the model
+    // "disagreed with itself". Report that honestly instead of masking
+    // an infra failure as low AI confidence.
+    if (validAttempts.length === 0) {
+      return {
+        page_number: rq.page_number,
+        question_number: rq.question_number,
+        is_correct: false,
+        correct_answer: '(系統錯誤)',
+        mistake_type: '系統暫時無法連接AI服務，請重新批改此題',
+        topic_tag: '待覆核',
+        explanation: '系統在計算此題時多次連線失敗（可能是流量過大或暫時性錯誤），並非題目本身有問題。請重新提交這份工作紙，或稍後再試。',
+      };
+    }
+
     const verified = voteSolution(validAttempts);
 
     // ---- Stage 3: Compare (deterministic first, LLM fallback) ----
@@ -157,8 +189,14 @@ async function safeSolveAttempt(
       solution_value: raw.solution_value as SolutionValue,
       reasoning_steps: Array.isArray(raw.reasoning_steps) ? raw.reasoning_steps.map(String) : [],
     };
-  } catch {
-    // One failed attempt out of three is tolerated — voting handles it.
+  } catch (err) {
+    // One failed attempt out of three is tolerated (voting handles it) —
+    // but it must be LOGGED, or a rate-limit outage looks identical to
+    // genuine model disagreement in the final output.
+    console.error(
+      `[AI Pipeline] ${adapter.name}: solve attempt failed after retries:`,
+      err instanceof Error ? err.message : err
+    );
     return null;
   }
 }
@@ -389,6 +427,95 @@ function appendReviewNote(mistakeType: string): string {
   const note = '（AI信心不足，建議教師覆核）';
   if (!mistakeType || mistakeType === '無') return note.replace('（', '').replace('）', '');
   return `${mistakeType} ${note}`;
+}
+
+// ---------------------------------------------------------------------------
+// Global provider throttling + retry-with-backoff
+// ---------------------------------------------------------------------------
+
+/** Simple counting semaphore — caps how many calls are in flight at once. */
+class Semaphore {
+  private active = 0;
+  private queue: Array<() => void> = [];
+
+  constructor(private readonly max: number) {}
+
+  async acquire(): Promise<() => void> {
+    if (this.active < this.max) {
+      this.active++;
+      return () => this.release();
+    }
+    return new Promise((resolve) => {
+      this.queue.push(() => {
+        this.active++;
+        resolve(() => this.release());
+      });
+    });
+  }
+
+  private release() {
+    this.active--;
+    const next = this.queue.shift();
+    if (next) next();
+  }
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function isRetryableError(err: unknown): boolean {
+  const msg = err instanceof Error ? err.message : String(err);
+  return RETRYABLE_PATTERN.test(msg);
+}
+
+async function retryWithBackoff<T>(fn: () => Promise<T>, label: string): Promise<T> {
+  let lastErr: unknown;
+  for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+    try {
+      return await fn();
+    } catch (err) {
+      lastErr = err;
+      const retryable = isRetryableError(err);
+      console.error(
+        `[AI Pipeline] ${label} call failed (attempt ${attempt + 1}/${MAX_RETRIES + 1}, retryable=${retryable}):`,
+        err instanceof Error ? err.message : err
+      );
+      if (!retryable || attempt === MAX_RETRIES) break;
+      const backoffMs = Math.round(2 ** attempt * 500 + Math.random() * 300); // jittered exponential backoff
+      await sleep(backoffMs);
+    }
+  }
+  throw lastErr;
+}
+
+/**
+ * Wraps a ModelAdapter so every call (vision or text) is:
+ *  - globally rate-limited to at most `limit` concurrent requests, across
+ *    ALL pipeline stages and ALL questions combined, and
+ *  - automatically retried with exponential backoff on transient errors
+ *    (429/500/502/503/timeouts), with every failure logged server-side.
+ * This is a drop-in wrapper — nothing downstream needs to know about it.
+ */
+function withThrottleAndRetry(adapter: ModelAdapter, limit: number): ModelAdapter {
+  const semaphore = new Semaphore(limit);
+
+  const throttled = async <T>(label: string, fn: () => Promise<T>): Promise<T> => {
+    const release = await semaphore.acquire();
+    try {
+      return await retryWithBackoff(fn, label);
+    } finally {
+      release();
+    }
+  };
+
+  return {
+    name: adapter.name,
+    callVisionJSON: (systemPrompt, userPrompt, imagesBase64, temperature) =>
+      throttled(`${adapter.name}:vision`, () => adapter.callVisionJSON(systemPrompt, userPrompt, imagesBase64, temperature)),
+    callTextJSON: (systemPrompt, userPrompt, temperature) =>
+      throttled(`${adapter.name}:text`, () => adapter.callTextJSON(systemPrompt, userPrompt, temperature)),
+  };
 }
 
 // ---------------------------------------------------------------------------
