@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { AIVisionFactory } from '@/lib/ai/factory';
+import { toClientErrorPayload } from '@/lib/ai/errors';
 
 // Input validation schema using Zod (accepts standard hex UUID formats and array of base64 images)
 const analyzeRequestSchema = z.object({
@@ -62,7 +63,7 @@ export async function POST(req: NextRequest) {
     } catch (aiError: any) {
       console.error('AI Analysis Provider error:', aiError);
       return NextResponse.json(
-        { error: `AI analysis failed: ${aiError.message || 'Unknown error'}` },
+        toClientErrorPayload(aiError),
         { status: 502 }
       );
     }
