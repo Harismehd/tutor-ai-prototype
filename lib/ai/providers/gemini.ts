@@ -26,6 +26,7 @@ export class GeminiProvider extends BaseAIProvider {
       model: this.modelName,
       generationConfig: {
         responseMimeType: 'application/json',
+        maxOutputTokens: 8192,
       },
     });
 

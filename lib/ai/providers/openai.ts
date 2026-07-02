@@ -46,6 +46,7 @@ export class OpenAIProvider extends BaseAIProvider {
       const response = await this.openai.chat.completions.create({
         model: this.modelName,
         response_format: { type: 'json_object' },
+        max_tokens: 4096,
         messages: [
           {
             role: 'system',
