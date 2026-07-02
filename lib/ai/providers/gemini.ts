@@ -77,29 +77,34 @@ export class GeminiProvider extends BaseAIProvider {
 
       for (const [pageIndex, image] of imagesBase64.entries()) {
         const pageNumber = pageIndex + 1;
-        const segments = await this.segmentQuestions(image, pageNumber);
+        const segments = await this.segmentQuestionsSafely(image, pageNumber);
         const questions: AIQuestionFeedback[] = [];
 
         for (const segment of segments) {
-          const ocr = await this.ocrQuestion(image, pageNumber, segment);
-          const verified = await this.solveWithConsensus(ocr);
+          try {
+            const ocr = await this.ocrQuestion(image, pageNumber, segment);
+            const verified = await this.solveWithConsensus(ocr);
 
-          if (verified.needs_review) {
-            questions.push(this.buildReviewQuestion(segment.question_number, verified));
-            continue;
+            if (verified.needs_review) {
+              questions.push(this.buildReviewQuestion(segment.question_number, verified));
+              continue;
+            }
+
+            const comparison = await this.compareAnswer(ocr, verified);
+            const explanation = await this.generateFeedback(ocr, verified, comparison);
+
+            questions.push({
+              question_number: segment.question_number,
+              is_correct: comparison.is_correct,
+              correct_answer: verified.correct_answer,
+              mistake_type: comparison.mistake_type,
+              topic_tag: comparison.topic_tag,
+              explanation,
+            });
+          } catch (questionError: unknown) {
+            console.error(`Gemini question pipeline failed on page ${pageNumber}, question ${segment.question_number}:`, questionError);
+            questions.push(this.buildReviewQuestion(segment.question_number, this.reviewSolution()));
           }
-
-          const comparison = await this.compareAnswer(ocr, verified);
-          const explanation = await this.generateFeedback(ocr, verified, comparison);
-
-          questions.push({
-            question_number: segment.question_number,
-            is_correct: comparison.is_correct,
-            correct_answer: verified.correct_answer,
-            mistake_type: comparison.mistake_type,
-            topic_tag: comparison.topic_tag,
-            explanation,
-          });
         }
 
         pages.push({ page_number: pageNumber, questions });
@@ -109,6 +114,16 @@ export class GeminiProvider extends BaseAIProvider {
     } catch (error: unknown) {
       console.error('Gemini Provider Error:', error);
       throw new Error(SYSTEM_FAILURE_MESSAGE);
+    }
+  }
+
+  private async segmentQuestionsSafely(imageBase64: string, pageNumber: number): Promise<QuestionSegment[]> {
+    try {
+      const segments = await this.segmentQuestions(imageBase64, pageNumber);
+      return segments.length > 0 ? segments : [this.fullPageSegment(pageNumber)];
+    } catch (error: unknown) {
+      console.error(`Gemini segmentation failed on page ${pageNumber}; falling back to full-page review segment:`, error);
+      return [this.fullPageSegment(pageNumber)];
     }
   }
 
@@ -192,7 +207,14 @@ ${JSON_ONLY}`,
   }
 
   private async solveWithConsensus(ocr: OCRResult): Promise<VerifiedSolution> {
-    const solves = await Promise.all([0, 1, 2].map(() => this.solveQuestion(ocr)));
+    const solves: SolveResult[] = [];
+    for (let i = 0; i < 3; i += 1) {
+      try {
+        solves.push(await this.solveQuestion(ocr));
+      } catch (error: unknown) {
+        console.error(`Gemini solve attempt ${i + 1} failed for question ${ocr.question_number}:`, error);
+      }
+    }
     const counts = new Map<string, { answer: string; count: number; result: SolveResult }>();
 
     for (const solve of solves) {
@@ -341,27 +363,31 @@ ${JSON_ONLY}`, 0.2);
   }
 
   private async createVisionJson(prompt: string, imageBase64: string): Promise<JsonObject> {
-    const model = this.genAI.getGenerativeModel({
-      model: this.modelName,
-      generationConfig: {
-        responseMimeType: 'application/json',
-        temperature: 0,
-      },
+    return this.withRetry('Gemini vision JSON', async () => {
+      const model = this.genAI.getGenerativeModel({
+        model: this.modelName,
+        generationConfig: {
+          responseMimeType: 'application/json',
+          temperature: 0,
+        },
+      });
+      const result = await model.generateContent([prompt, this.imagePart(imageBase64)]);
+      return this.parseJson(result.response.text());
     });
-    const result = await model.generateContent([prompt, this.imagePart(imageBase64)]);
-    return this.parseJson(result.response.text());
   }
 
   private async createTextJson(prompt: string, temperature: number): Promise<JsonObject> {
-    const model = this.genAI.getGenerativeModel({
-      model: this.modelName,
-      generationConfig: {
-        responseMimeType: 'application/json',
-        temperature,
-      },
+    return this.withRetry('Gemini text JSON', async () => {
+      const model = this.genAI.getGenerativeModel({
+        model: this.modelName,
+        generationConfig: {
+          responseMimeType: 'application/json',
+          temperature,
+        },
+      });
+      const result = await model.generateContent(prompt);
+      return this.parseJson(result.response.text());
     });
-    const result = await model.generateContent(prompt);
-    return this.parseJson(result.response.text());
   }
 
   private imagePart(img: string): GeminiPart {
@@ -378,7 +404,7 @@ ${JSON_ONLY}`, 0.2);
     if (!text) {
       throw new Error('Empty AI response.');
     }
-    const parsed = JSON.parse(text.replace(/```json|```/g, '').trim());
+    const parsed = JSON.parse(this.extractJson(text));
     return this.asJsonObject(parsed);
   }
 
@@ -396,5 +422,48 @@ ${JSON_ONLY}`, 0.2);
 
   private parseConfidence(value: unknown): 'high' | 'medium' | 'low' {
     return value === 'high' || value === 'medium' || value === 'low' ? value : 'medium';
+  }
+
+  private fullPageSegment(pageNumber: number): QuestionSegment {
+    return {
+      question_number: `Page ${pageNumber}`,
+      bbox: { x: 0, y: 0, width: 100, height: 100 },
+    };
+  }
+
+  private reviewSolution(): VerifiedSolution {
+    return {
+      correct_answer: '需要人工覆核',
+      solution_steps: 'A provider stage failed before a reliable answer could be verified.',
+      confidence: 'low',
+      needs_review: true,
+      candidates: [],
+    };
+  }
+
+  private extractJson(text: string): string {
+    const withoutFences = text.replace(/```json|```/g, '').trim();
+    const firstBrace = withoutFences.indexOf('{');
+    const lastBrace = withoutFences.lastIndexOf('}');
+    if (firstBrace === -1 || lastBrace === -1 || lastBrace <= firstBrace) {
+      throw new Error(`AI response did not contain a JSON object: ${withoutFences.slice(0, 200)}`);
+    }
+    return withoutFences.slice(firstBrace, lastBrace + 1);
+  }
+
+  private async withRetry<T>(label: string, operation: () => Promise<T>): Promise<T> {
+    let lastError: unknown;
+    for (let attempt = 1; attempt <= 3; attempt += 1) {
+      try {
+        return await operation();
+      } catch (error: unknown) {
+        lastError = error;
+        console.error(`${label} attempt ${attempt} failed:`, error);
+        if (attempt < 3) {
+          await new Promise((resolve) => setTimeout(resolve, attempt * 750));
+        }
+      }
+    }
+    throw lastError;
   }
 }
