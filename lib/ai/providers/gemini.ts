@@ -32,6 +32,10 @@ type CompareResult = {
   topic_tag: string;
 };
 
+type GradeFeedbackResult = CompareResult & {
+  explanation: string;
+};
+
 type VerifiedSolution = SolveResult & {
   needs_review: boolean;
   candidates: string[];
@@ -52,6 +56,7 @@ Grade only the final intended answer. If a crossed-out or parenthesized answer i
 If handwriting is illegible or the solver cannot reach agreement, flag the item for human review instead of guessing.`;
 
 const JSON_ONLY = 'Return only a raw JSON object. Do not include markdown fences or conversational text.';
+const SOLVE_ATTEMPTS = 2;
 
 export class GeminiProvider extends BaseAIProvider {
   private genAI: GoogleGenerativeAI;
@@ -90,16 +95,15 @@ export class GeminiProvider extends BaseAIProvider {
               continue;
             }
 
-            const comparison = await this.compareAnswer(ocr, verified);
-            const explanation = await this.generateFeedback(ocr, verified, comparison);
+            const graded = await this.gradeAndGenerateFeedback(ocr, verified);
 
             questions.push({
               question_number: segment.question_number,
-              is_correct: comparison.is_correct,
+              is_correct: graded.is_correct,
               correct_answer: verified.correct_answer,
-              mistake_type: comparison.mistake_type,
-              topic_tag: comparison.topic_tag,
-              explanation,
+              mistake_type: graded.mistake_type,
+              topic_tag: graded.topic_tag,
+              explanation: graded.explanation,
             });
           } catch (questionError: unknown) {
             console.error(`Gemini question pipeline failed on page ${pageNumber}, question ${segment.question_number}:`, questionError);
@@ -208,7 +212,7 @@ ${JSON_ONLY}`,
 
   private async solveWithConsensus(ocr: OCRResult): Promise<VerifiedSolution> {
     const solves: SolveResult[] = [];
-    for (let i = 0; i < 3; i += 1) {
+    for (let i = 0; i < SOLVE_ATTEMPTS; i += 1) {
       try {
         solves.push(await this.solveQuestion(ocr));
       } catch (error: unknown) {
@@ -232,13 +236,7 @@ ${JSON_ONLY}`,
     const candidates = solves.map((s) => s.correct_answer).filter(Boolean);
 
     if (!winner || winner.count < 2) {
-      return {
-        correct_answer: candidates.join(' / '),
-        solution_steps: 'The independent solvers did not agree.',
-        confidence: 'low',
-        needs_review: true,
-        candidates,
-      };
+      return this.adjudicateSolution(ocr, solves);
     }
 
     return {
@@ -254,7 +252,7 @@ ${JSON_ONLY}`,
 
 Task: Solve this worksheet question from scratch.
 You must not see or use the student's answer. Solve only from the printed question and diagram description.
-Show concise verification in solution_steps.
+Show concise verification in solution_steps. Keep solution_steps under 700 Traditional Chinese characters.
 
 Printed question:
 ${ocr.printed_question}
@@ -269,12 +267,98 @@ Schema:
   "confidence": "high"
 }
 
-${JSON_ONLY}`, 0.35);
+${JSON_ONLY}`, 0.35, 700);
 
     return {
       correct_answer: String(response.correct_answer || ''),
       solution_steps: String(response.solution_steps || ''),
       confidence: this.parseConfidence(response.confidence),
+    };
+  }
+
+  private async adjudicateSolution(ocr: OCRResult, solves: SolveResult[]): Promise<VerifiedSolution> {
+    const candidates = solves.map((s) => s.correct_answer).filter(Boolean);
+    if (candidates.length === 0) {
+      return this.reviewSolution();
+    }
+
+    const response = await this.createTextJson(`${EDUCATION_RULES}
+
+Task: Verify candidate answers for this worksheet question.
+You are not allowed to choose manual review just because candidate wording differs.
+Choose the best answer when the printed question and diagram description are clear enough to solve.
+Use needs_review only when OCR is genuinely unreadable, the diagram description is insufficient, or the candidates reveal a real unresolved ambiguity.
+If two answers are equivalent, choose the shortest student-friendly form.
+Keep solution_steps under 700 Traditional Chinese characters.
+
+Printed question:
+${ocr.printed_question}
+
+Diagram or visual details:
+${ocr.diagram_description}
+
+Candidate solves:
+${JSON.stringify(solves)}
+
+Schema:
+{
+  "correct_answer": "",
+  "solution_steps": "",
+  "confidence": "high",
+  "needs_review": false
+}
+
+${JSON_ONLY}`, 0, 700);
+
+    return {
+      correct_answer: String(response.correct_answer || candidates[0]),
+      solution_steps: String(response.solution_steps || solves[0]?.solution_steps || ''),
+      confidence: this.parseConfidence(response.confidence),
+      needs_review: Boolean(response.needs_review),
+      candidates,
+    };
+  }
+
+  private async gradeAndGenerateFeedback(ocr: OCRResult, verified: VerifiedSolution): Promise<GradeFeedbackResult> {
+    const response = await this.createTextJson(`${EDUCATION_RULES}
+
+Task: Compare the verified answer with the student's final intended answer, then write concise feedback.
+Do not re-solve the question. Use the verified answer as authoritative.
+Accept mathematically equivalent answers and equivalent Chinese wording.
+The explanation must be 3 to 5 short numbered steps, under 900 Traditional Chinese characters total.
+Do not list every intermediate clock time unless it is essential. Summarize repeated counting with arithmetic.
+Do not use markdown, asterisks, hyphen bullets, sub-bullets, or lettered bullets.
+
+Printed question:
+${ocr.printed_question}
+
+Student final answer:
+${ocr.student_answer}
+
+Erasure and correction notes:
+${ocr.erasure_notes}
+
+Verified correct answer:
+${verified.correct_answer}
+
+Verified solution:
+${verified.solution_steps}
+
+Schema:
+{
+  "is_correct": true,
+  "mistake_type": "無",
+  "topic_tag": "General Math",
+  "explanation": ""
+}
+
+${JSON_ONLY}`, 0.1, 900);
+
+    return {
+      is_correct: Boolean(response.is_correct),
+      mistake_type: String(response.mistake_type || (response.is_correct ? '無' : '答案錯誤')),
+      topic_tag: String(response.topic_tag || 'General Math'),
+      explanation: this.compactExplanation(String(response.explanation || verified.solution_steps || '')),
     };
   }
 
@@ -376,13 +460,14 @@ ${JSON_ONLY}`, 0.2);
     });
   }
 
-  private async createTextJson(prompt: string, temperature: number): Promise<JsonObject> {
+  private async createTextJson(prompt: string, temperature: number, maxOutputTokens = 900): Promise<JsonObject> {
     return this.withRetry('Gemini text JSON', async () => {
       const model = this.genAI.getGenerativeModel({
         model: this.modelName,
         generationConfig: {
           responseMimeType: 'application/json',
           temperature,
+          maxOutputTokens,
         },
       });
       const result = await model.generateContent(prompt);
@@ -422,6 +507,17 @@ ${JSON_ONLY}`, 0.2);
 
   private parseConfidence(value: unknown): 'high' | 'medium' | 'low' {
     return value === 'high' || value === 'medium' || value === 'low' ? value : 'medium';
+  }
+
+  private compactExplanation(explanation: string): string {
+    return explanation
+      .replace(/\*\s*/g, '')
+      .replace(/^\s*[-•]\s*/gm, '')
+      .split('\n')
+      .map((line) => line.trimEnd())
+      .filter(Boolean)
+      .join('\n')
+      .slice(0, 900);
   }
 
   private fullPageSegment(pageNumber: number): QuestionSegment {
