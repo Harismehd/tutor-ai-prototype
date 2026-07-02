@@ -61,8 +61,20 @@ export async function POST(req: NextRequest) {
       feedback = await aiProvider.analyzeWorksheet(imagesBase64);
     } catch (aiError: any) {
       console.error('AI Analysis Provider error:', aiError);
+
+      const errorMessage = aiError?.message || '';
+
+      // If it's a JSON parsing or malformed structure error
+      if (errorMessage.includes('JSON') || errorMessage.includes('Unexpected token') || errorMessage.includes('Expected') || errorMessage.includes('Malformed')) {
+        return NextResponse.json(
+          { error: '工作紙分析失敗：AI 回傳格式不正確，請重新嘗試或確保圖片清晰。' },
+          { status: 502 }
+        );
+      }
+
+      // Fallback for general AI or network errors
       return NextResponse.json(
-        { error: `AI analysis failed: ${aiError.message || 'Unknown error'}` },
+        { error: `系統發生錯誤：${errorMessage || '未知錯誤，請稍後再試'}` },
         { status: 502 }
       );
     }
