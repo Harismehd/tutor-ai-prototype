@@ -1,6 +1,57 @@
 import OpenAI from 'openai';
+import type { ChatCompletionContentPart } from 'openai/resources/chat/completions';
 import { BaseAIProvider } from './base';
-import { AIVisionFeedback } from '../types';
+import { AIQuestionFeedback, AIVisionFeedback } from '../types';
+
+type QuestionSegment = {
+  question_number: string;
+  bbox: {
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+  };
+};
+
+type OCRResult = {
+  question_number: string;
+  printed_question: string;
+  diagram_description: string;
+  student_answer: string;
+  erasure_notes: string;
+};
+
+type SolveResult = {
+  correct_answer: string;
+  solution_steps: string;
+  confidence: 'high' | 'medium' | 'low';
+};
+
+type CompareResult = {
+  is_correct: boolean;
+  mistake_type: string;
+  topic_tag: string;
+};
+
+type VerifiedSolution = SolveResult & {
+  needs_review: boolean;
+  candidates: string[];
+};
+
+type JsonObject = Record<string, unknown>;
+
+const SYSTEM_FAILURE_MESSAGE = '系統暫時無法處理此工作紙，請稍後再試。';
+
+const EDUCATION_RULES = `You are an expert educational grading assistant for a Hong Kong tutoring centre.
+The student is Primary 2, age 7-8.
+Use Traditional Chinese for student-facing explanation and mistake_type.
+Use Hong Kong EDB Primary Mathematics terminology, such as 正方體 and 長方體.
+Explain with primary-level visual or comparison logic. Avoid secondary-school jargon such as 方程組, 消去, 代入, or 代回.
+For explanations, output plain text only. Do not use markdown, bullets made with hyphens, or asterisks. Use numbered steps and standard line breaks. Use × for multiplication, never *.
+Grade only the final intended answer. If a crossed-out or parenthesized answer is replaced by another answer outside it, ignore the crossed-out answer and grade the replacement.
+If handwriting is illegible or the solver cannot reach agreement, flag the item for human review instead of guessing.`;
+
+const JSON_ONLY = 'Return only a raw JSON object. Do not include markdown fences or conversational text.';
 
 export class OpenAIProvider extends BaseAIProvider {
   private openai: OpenAI;
@@ -21,151 +72,341 @@ export class OpenAIProvider extends BaseAIProvider {
       throw new Error('At least one worksheet page image is required.');
     }
 
-    // Build user content parts, supporting multiple images
-    const contentParts: any[] = [
+    try {
+      const pages = [];
+
+      for (const [pageIndex, image] of imagesBase64.entries()) {
+        const pageNumber = pageIndex + 1;
+        const segments = await this.segmentQuestions(image, pageNumber);
+        const questions: AIQuestionFeedback[] = [];
+
+        for (const segment of segments) {
+          const ocr = await this.ocrQuestion(image, pageNumber, segment);
+          const verified = await this.solveWithConsensus(ocr);
+
+          if (verified.needs_review) {
+            questions.push(this.buildReviewQuestion(segment.question_number, verified));
+            continue;
+          }
+
+          const comparison = await this.compareAnswer(ocr, verified);
+          const explanation = await this.generateFeedback(ocr, verified, comparison);
+
+          questions.push({
+            question_number: segment.question_number,
+            is_correct: comparison.is_correct,
+            correct_answer: verified.correct_answer,
+            mistake_type: comparison.mistake_type,
+            topic_tag: comparison.topic_tag,
+            explanation,
+          });
+        }
+
+        pages.push({ page_number: pageNumber, questions });
+      }
+
+      return { pages };
+    } catch (error: unknown) {
+      console.error('OpenAI Provider Error:', error);
+      throw new Error(SYSTEM_FAILURE_MESSAGE);
+    }
+  }
+
+  private async segmentQuestions(imageBase64: string, pageNumber: number): Promise<QuestionSegment[]> {
+    const response = await this.createVisionJson([
       {
         type: 'text',
-        text: 'Please analyze the pages of this student worksheet and return the structured JSON feedback.',
-      },
-    ];
+        text: `${EDUCATION_RULES}
 
-    imagesBase64.forEach((img) => {
-      let dataUrl = img;
-      if (!img.startsWith('data:')) {
-        dataUrl = `data:image/png;base64,${img}`;
-      }
-      contentParts.push({
-        type: 'image_url',
-        image_url: {
-          url: dataUrl,
-        },
-      });
-    });
+Task: Segment worksheet page ${pageNumber} into individual printed questions.
+Return every visible question once. Do not solve or grade anything.
+Use bounding boxes in percentage coordinates from 0 to 100 relative to the full page image.
+Include enough area for the printed question, answer area, diagrams, and nearby correction marks.
 
-    try {
-      const response = await this.openai.chat.completions.create({
-        model: this.modelName,
-        response_format: { type: 'json_object' },
-        messages: [
-          {
-            role: 'system',
-            content: `You are an expert educational grading assistant for a tutoring centre.
-Analyze the uploaded image(s) of a student's worksheet. The worksheet may consist of one or multiple pages.
-Meticulously check the student's answers for EACH question visible on the worksheet pages, and group them page-by-page.
-
-CRITICAL ACCURACY & VISUAL PROCESSING RULES:
-1. Global Solve-First & Time Markers: At the very beginning of your JSON output, in the "global_scratchpad_and_verification" field, you MUST solve every question on the worksheet step-by-step. For math, write out the algebraic equations, solve them, and verify the values. For calendars, count dates step-by-step. For times, calculate the full duration carefully. Pay close attention to printed time boundaries; do NOT confuse "午夜" (Midnight / AM boundary) with "下午" (Afternoon / PM boundary).
-2. OCR Erasures & Overwrites: Pay extremely close attention to student erasures, crossed-out text, and parenthesized marks. If a student writes an answer inside parentheses but crosses it out (with a line, slash, or scribble) and writes a different answer outside, the answer written outside is the final intended answer. You MUST ignore the crossed-out character and grade only the final correction. If the final correction is incorrect, mark is_correct = false.
-3. Multi-Term Equations: Scan the entire equation carefully from left to right. Make sure you read and include every single term, operator, and number in your calculations (e.g., if the equation is "M + 32 + 13 = 60", do not ignore the "+ 13" term; solve: M + 45 = 60 -> M = 15).
-4. Right-Margin Answer Boxes: Scan the entire page width, including the far-right margins. Look closely for square boxes on the right edge. If a letter (like "C" or "D") is written inside them, that is the student's answer. Do not ignore it or mark it as "未作答" (not answered).
-5. Icon Counting under Noise & Tally Marks: When counting printed symbols or icons (e.g., clovers, stars) in equations, ignore any handwritten digits or checkmarks. Note that students often draw a single diagonal slash or tick mark through printed icons to keep track of counting; you MUST count these ticked/slashed printed icons as part of the equation (do NOT ignore them). Only ignore characters as erased if they are written in the student's own handwriting and clearly crossed out or scribbled over.
-6. Ignore Scribbles: Ignore any student pencil drawings, sketches, or hand-drawn grids outside the printed question boundaries (e.g., student counting marks or diagrams). Only grade the final answer written in the designated answers space.
-7. Handwriting OCR & Circled Numbers: If a student's answer is completely illegible or ambiguous, mark is_correct as false and describe the ambiguity in the explanation. Do NOT confuse a circle containing a single horizontal stroke "一" (representing Monday) with the character "日" (Sunday). A circled "一" represents "星期一" (Monday). If the student wrote a circled "一" for a calendar question, the answer is "星期一" (Monday), which is incorrect.
-8. Math Equivalency: Accept mathematically equivalent valid methods (e.g., equivalent simplified fractions, decimal equivalents like 0.5 vs 1/2, or alternative calculation steps).
-9. Context-Aware Chinese OCR & Geometry: For Chinese handwriting OCR, verify stroke correctness and contextual meaning using standard Hong Kong educational terms. Resolve ambiguous characters using the topic context. For example, in a 3D geometry question, map ambiguous characters to standard geometric terms like "圓錐體" (cone), "正方體" (cube), or "八角錐體" (octagonal pyramid) rather than literal visual approximations. Note that a cube (6 faces) and an octagonal pyramid (9 faces) have a face difference of 3 (9-6=3), which is a valid geometry solution.
-10. Fill-in-the-Blank: Compare only the handwritten/typed text inside the blank, ignoring pre-printed surrounding text.
-11. Detailed Output: The "explanation" field must be a detailed, encouraging, step-by-step breakdown of how to solve the question and an analysis of the student's work. Even if the student is correct, provide the full mathematical or logical step-by-step solution. Avoid lazy placeholders like "解答正確。". Keep it friendly, educational, and thorough.
-12. All text in the "explanation" and "mistake_type" fields MUST be in Traditional Chinese (繁體中文).
-13. Pedagogical Constraints (Age Mismatch): The student demographic profile is Primary 2 (7-8 years old). You MUST explain all mathematics using primary-level comparative or visual logic. NEVER use secondary-school mathematical jargon such as "方程組" (system of equations), "消去" (elimination), or "代入/代回" (substitution). Instead, explain using step-by-step intuitive comparisons (e.g., "比較兩個算式：第二個算式比第一個算式多了2個星，結果大了6。由此可知，2個星代表6，所以1個星代表3...").
-14. Hong Kong Curriculum Localization: Comply strictly with the Hong Kong Education Bureau (EDB) Primary Mathematics Curriculum terminology. Always use "正方體" instead of "正六面體", and "長方體" instead of "直角六面體" or "長方柱".
-15. Plain-Text Formatting (No Markdown) & Multiplication Cross: The frontend UI renders explanation text as pre-formatted plain text (whitespace-pre-wrap). To prevent raw unrendered symbols from showing in the UI, you MUST NOT use any markdown characters (do not use "**" for bold, and do not use "*" or "-" for list bullets). Use plain numbers (e.g., "1.", "2.") and standard line breaks for step-by-step structure. Never use the programming asterisk symbol "*" for multiplication; always use the standard math multiplication cross symbol "×" instead (for example, write "3 × 69 = 207" or "2 × 3 = 6").
-16. Match Worksheet Vocabulary: Always use the exact terminology, names, or symbols printed on the worksheet. For example, if the sheet uses "梅花" (Clover), do not write "三葉草". If the sheet uses "星" (Star), do not write "星星".
-17. Professional Calendar Explanations: For calendar and date questions, do not list long day-by-day dates leading up to the starting date (e.g., listing June 1 to June 15). Instead, instruct the student to look directly at the calendar grid image to identify the starting day of the week, and then write out the day-by-day travel timeline clearly (for example: Day 1 is June 15 (Thursday), Day 2 is June 16 (Friday), Day 3 is June 17 (Saturday), Day 4 is June 18 (Sunday)).
-
-QUESTION-SPECIFIC CONDITIONAL RUBRICS:
-Before grading a question, check if its printed text or equation matches any of the following descriptions. If it matches, you MUST apply the corresponding rubric:
-- If the question contains "11時55分至午夜12時5分" (Clock chimes):
-  * Correct Answer: "102".
-  * Explanation steps:
-    1. 計算整點報時：中午 12:00 報時 12 次。下午 1:00 至晚上 11:00 報時次數為 1 加到 11 等於 66 次。隔天凌晨 12:00 報時 12 次。整點報時總共 90 次。
-    2. 計算半點報時：從中午 12:30 到晚上 11:30，共有 12 個半點，所以報時 12 次。
-    3. 兩者相加：90 加 12 等於 102 次。
-- If the question contains "旅行團" or "6月15日出發" (Travel calendar):
-  * Correct Answer: "星期日".
-  * Grading note: The student wrote '一' (Monday) next to the parentheses as their final correction. Thus, grade this question as Incorrect (is_correct = false).
-  * Explanation steps:
-    1. 觀察月曆：請看工作紙上的月曆，可以直接找出 6 月 15 日是星期四。
-    2. 旅行天數推算：旅行團是四天三夜，所以第四天是回港日。
-    3. 推算星期：第一天是 6 月 15 日（星期四），第二天是 6 月 16 日（星期五），第三天是 6 月 17 日（星期六），第四天是 6 月 18 日（星期日）。
-    4. 結論：小明回港的日期是星期日。
-- If the question contains "柱體和錐體" and "相差3個" (Solid shapes):
-  * Correct Answer: "正方體及八角錐體" (or "正方體和八角錐體").
-  * Grading note: The student wrote "圓錐體", which is Incorrect (is_correct = false). Always explain that the prism is a "正方體" (which has 6 faces), and a pyramid with 3 more faces must have 9 faces, making it an "八角錐體".
-- If the question shows icons of Clovers (☘️) and Stars (⭐) (e.g., 3 clovers + 4 stars = 18):
-  * Correct Answer: "梅花 = 2, 星 = 3" (or "☘️ = 2, ⭐ = 3").
-  * Explanation steps:
-    比較兩個算式：第一個算式有 3 個梅花和 4 個星，共 18；第二個算式有 3 個梅花和 6 個星，共 24。
-    第二個算式比第一個算式多了 2 個星，結果大了 6（24 減 18 等於 6）。由此可知，2 個星代表 6，所以 1 個星代表 3。
-    再把星的值放回第一個算式：3 個梅花加 12（4 個星）等於 18，所以 3 個梅花代表 6，1 個梅花代表 2。
-- If the question contains "有6個正方形" and "長方形多少個" (Count rectangles):
-  * Correct Answer: "18".
-  * Grading note: Ignore the student's hand-drawn 1x6 grid sketch on the right. The printed 2x3 grid has 18 rectangles. Grade as Correct if the student wrote "18" (is_correct = true).
-- If the question contains "小明在排隊" and "排第六" (Queue count):
-  * Correct Answer: "11".
-- If the question is the equation "M + 32 + 13 = 60" (Equation M):
-  * Correct Answer: "15".
-- If the question is choice options containing "A. R - 3 = 21" and "C. 15 = d + 8" (Choice option C):
-  * Correct Answer: "C".
-- If the question is the equation "T - 28 = 41" (Choice option D):
-  * Correct Answer: "D".
-For any other equations or questions that do not match the descriptions above, perform generic OCR and mathematical grading from scratch.
-
-You MUST respond with a JSON object conforming to the following schema:
+Schema:
 {
-  "global_scratchpad_and_verification": "Solve every question here first step-by-step before writing page results...",
-  "pages": [
+  "questions": [
     {
-      "page_number": 1, // 1-based index matching the order of uploaded images
-      "questions": [
-        {
-          "question_number": "1", // String label of the question (e.g., "1", "2(a)", "3b")
-          "is_correct": true, // true if correct, false if incorrect
-          "correct_answer": "102", // The standard correct answer or correction (MUST be populated for ALL questions, correct or incorrect)
-          "mistake_type": "無", // Description of the mistake in Traditional Chinese (e.g., "計算錯誤", "概念錯誤", "未作答", or "無" if correct)
-          "topic_tag": "Fraction Addition", // A short 1-3 word tag describing the topic (in English or Traditional Chinese)
-          "explanation": "詳細且帶鼓勵性的步驟解析" // Detailed step-by-step mathematical explanation in Traditional Chinese
-        }
-      ]
+      "question_number": "1",
+      "bbox": { "x": 0, "y": 0, "width": 100, "height": 20 }
     }
   ]
 }
 
-Return ONLY the raw JSON object conforming to the schema.`,
+${JSON_ONLY}`,
+      },
+      this.imagePart(imageBase64),
+    ]);
+
+    const questions = Array.isArray(response.questions) ? response.questions : [];
+    return questions
+      .map((q: unknown, index: number) => {
+        const question = this.asJsonObject(q);
+        const bbox = this.asJsonObject(question.bbox);
+        return {
+          question_number: String(question.question_number || index + 1),
+          bbox: {
+            x: Number(bbox.x) || 0,
+            y: Number(bbox.y) || 0,
+            width: Number(bbox.width) || 100,
+            height: Number(bbox.height) || 100,
           },
-          {
-            role: 'user',
-            content: contentParts,
-          },
-        ],
+        };
+      })
+      .filter((q: QuestionSegment) => q.question_number.trim().length > 0);
+  }
+
+  private async ocrQuestion(imageBase64: string, pageNumber: number, segment: QuestionSegment): Promise<OCRResult> {
+    const response = await this.createVisionJson([
+      {
+        type: 'text',
+        text: `${EDUCATION_RULES}
+
+Task: OCR only question ${segment.question_number} on page ${pageNumber}.
+Use the full page image, but focus on this percentage bbox:
+${JSON.stringify(segment.bbox)}
+
+Extract:
+1. The printed question text, equation, options, and labels.
+2. Any diagram, table, calendar, icon, or geometry details needed to solve it.
+3. The student's final intended answer.
+4. Erasure, crossed-out text, overwrite, or correction notes.
+
+Do not solve or grade the question.
+
+Schema:
+{
+  "question_number": "${segment.question_number}",
+  "printed_question": "",
+  "diagram_description": "",
+  "student_answer": "",
+  "erasure_notes": ""
+}
+
+${JSON_ONLY}`,
+      },
+      this.imagePart(imageBase64),
+    ]);
+
+    return {
+      question_number: String(response.question_number || segment.question_number),
+      printed_question: String(response.printed_question || ''),
+      diagram_description: String(response.diagram_description || ''),
+      student_answer: String(response.student_answer || ''),
+      erasure_notes: String(response.erasure_notes || ''),
+    };
+  }
+
+  private async solveWithConsensus(ocr: OCRResult): Promise<VerifiedSolution> {
+    const solves = await Promise.all([0, 1, 2].map(() => this.solveQuestion(ocr)));
+    const counts = new Map<string, { answer: string; count: number; result: SolveResult }>();
+
+    for (const solve of solves) {
+      const key = this.normalizeAnswer(solve.correct_answer);
+      if (!key) continue;
+      const current = counts.get(key);
+      counts.set(key, {
+        answer: solve.correct_answer,
+        count: (current?.count || 0) + 1,
+        result: solve,
       });
-
-      const responseText = response.choices[0]?.message?.content;
-      if (!responseText) {
-        throw new Error('Empty response received from OpenAI.');
-      }
-
-      const feedback = JSON.parse(responseText.trim()) as AIVisionFeedback;
-
-      if (!feedback.pages || !Array.isArray(feedback.pages)) {
-        throw new Error('Malformed JSON structure returned by OpenAI: missing pages array.');
-      }
-
-      return {
-        pages: feedback.pages.map((p) => ({
-          page_number: Number(p.page_number) || 1,
-          questions: (p.questions || []).map((q) => ({
-            question_number: String(q.question_number) || '1',
-            is_correct: Boolean(q.is_correct),
-            correct_answer: q.correct_answer || '',
-            mistake_type: q.mistake_type || 'None',
-            topic_tag: q.topic_tag || 'General Math',
-            explanation: q.explanation || '',
-          })),
-        })),
-      };
-    } catch (error: any) {
-      console.error('OpenAI Provider Error:', error);
-      throw new Error(`OpenAI Vision Analysis failed: ${error?.message || error}`);
     }
+
+    const winner = [...counts.values()].sort((a, b) => b.count - a.count)[0];
+    const candidates = solves.map((s) => s.correct_answer).filter(Boolean);
+
+    if (!winner || winner.count < 2) {
+      return {
+        correct_answer: candidates.join(' / '),
+        solution_steps: 'The independent solvers did not agree.',
+        confidence: 'low',
+        needs_review: true,
+        candidates,
+      };
+    }
+
+    return {
+      ...winner.result,
+      correct_answer: winner.answer,
+      needs_review: false,
+      candidates,
+    };
+  }
+
+  private async solveQuestion(ocr: OCRResult): Promise<SolveResult> {
+    const response = await this.createTextJson(`${EDUCATION_RULES}
+
+Task: Solve this worksheet question from scratch.
+You must not see or use the student's answer. Solve only from the printed question and diagram description.
+Show concise verification in solution_steps.
+
+Printed question:
+${ocr.printed_question}
+
+Diagram or visual details:
+${ocr.diagram_description}
+
+Schema:
+{
+  "correct_answer": "",
+  "solution_steps": "",
+  "confidence": "high"
+}
+
+${JSON_ONLY}`, 0.35);
+
+    return {
+      correct_answer: String(response.correct_answer || ''),
+      solution_steps: String(response.solution_steps || ''),
+      confidence: this.parseConfidence(response.confidence),
+    };
+  }
+
+  private async compareAnswer(ocr: OCRResult, verified: VerifiedSolution): Promise<CompareResult> {
+    const response = await this.createTextJson(`${EDUCATION_RULES}
+
+Task: Compare the verified answer with the student's final intended answer.
+Do not re-solve the question. Use the verified answer as authoritative.
+Accept mathematically equivalent answers and equivalent Chinese wording.
+
+Printed question:
+${ocr.printed_question}
+
+Student final answer:
+${ocr.student_answer}
+
+Erasure and correction notes:
+${ocr.erasure_notes}
+
+Verified correct answer:
+${verified.correct_answer}
+
+Verified solution:
+${verified.solution_steps}
+
+Schema:
+{
+  "is_correct": true,
+  "mistake_type": "無",
+  "topic_tag": "General Math"
+}
+
+${JSON_ONLY}`, 0);
+
+    return {
+      is_correct: Boolean(response.is_correct),
+      mistake_type: String(response.mistake_type || (response.is_correct ? '無' : '答案錯誤')),
+      topic_tag: String(response.topic_tag || 'General Math'),
+    };
+  }
+
+  private async generateFeedback(ocr: OCRResult, verified: VerifiedSolution, comparison: CompareResult): Promise<string> {
+    const response = await this.createTextJson(`${EDUCATION_RULES}
+
+Task: Write detailed, encouraging feedback in Traditional Chinese for this Primary 2 student.
+Do not re-solve the question. Explain the verified solution and briefly connect it to the student's answer.
+Use plain text only, numbered steps, no markdown.
+
+Printed question:
+${ocr.printed_question}
+
+Student final answer:
+${ocr.student_answer}
+
+Correct answer:
+${verified.correct_answer}
+
+Verified solution:
+${verified.solution_steps}
+
+Is correct:
+${comparison.is_correct}
+
+Mistake type:
+${comparison.mistake_type}
+
+Schema:
+{
+  "explanation": ""
+}
+
+${JSON_ONLY}`, 0.2);
+
+    return String(response.explanation || verified.solution_steps || '');
+  }
+
+  private buildReviewQuestion(questionNumber: string, verified: VerifiedSolution): AIQuestionFeedback {
+    return {
+      question_number: questionNumber,
+      is_correct: false,
+      correct_answer: verified.correct_answer || '需要人工覆核',
+      mistake_type: '需要人工覆核',
+      topic_tag: 'Review',
+      explanation: '系統未能就此題的正確答案取得一致判斷。為避免給學生錯誤回饋，請老師人工覆核此題。',
+    };
+  }
+
+  private async createVisionJson(content: ChatCompletionContentPart[]): Promise<JsonObject> {
+    const response = await this.openai.chat.completions.create({
+      model: this.modelName,
+      temperature: 0,
+      response_format: { type: 'json_object' },
+      messages: [
+        {
+          role: 'user',
+          content,
+        },
+      ],
+    });
+
+    return this.parseJson(response.choices[0]?.message?.content);
+  }
+
+  private async createTextJson(prompt: string, temperature: number): Promise<JsonObject> {
+    const response = await this.openai.chat.completions.create({
+      model: this.modelName,
+      temperature,
+      response_format: { type: 'json_object' },
+      messages: [
+        {
+          role: 'user',
+          content: prompt,
+        },
+      ],
+    });
+
+    return this.parseJson(response.choices[0]?.message?.content);
+  }
+
+  private imagePart(img: string): ChatCompletionContentPart {
+    const url = img.startsWith('data:') ? img : `data:image/png;base64,${img}`;
+    return {
+      type: 'image_url',
+      image_url: { url },
+    };
+  }
+
+  private parseJson(text?: string | null): JsonObject {
+    if (!text) {
+      throw new Error('Empty AI response.');
+    }
+    const parsed = JSON.parse(text.replace(/```json|```/g, '').trim());
+    return this.asJsonObject(parsed);
+  }
+
+  private asJsonObject(value: unknown): JsonObject {
+    return value && typeof value === 'object' && !Array.isArray(value) ? value as JsonObject : {};
+  }
+
+  private normalizeAnswer(answer: string): string {
+    return answer
+      .toLowerCase()
+      .replace(/\s+/g, '')
+      .replace(/[，。,.]/g, '')
+      .trim();
+  }
+
+  private parseConfidence(value: unknown): 'high' | 'medium' | 'low' {
+    return value === 'high' || value === 'medium' || value === 'low' ? value : 'medium';
   }
 }
