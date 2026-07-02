@@ -1,3 +1,4 @@
+import { jsonrepair } from 'jsonrepair';
 import OpenAI from 'openai';
 import { BaseAIProvider } from './base';
 import { AIVisionFeedback } from '../types';
@@ -73,7 +74,7 @@ CRITICAL ACCURACY & PEDAGOGICAL RULES:
 
 You MUST respond with a JSON object conforming to the following schema:
 {
-  "global_scratchpad_and_verification": "Solve every question here first step-by-step before writing page results...",
+  "global_scratchpad_and_verification": "Solve every question here concisely. Keep it brief to save output tokens.",
   "pages": [
     {
       "page_number": 1, // 1-based index matching the order of uploaded images
@@ -105,7 +106,24 @@ Return ONLY the raw JSON object conforming to the schema.`,
         throw new Error('Empty response received from OpenAI.');
       }
 
-      const feedback = JSON.parse(responseText.trim()) as AIVisionFeedback;
+      let cleanedText = responseText.trim();
+      const jsonMatch = cleanedText.match(/\{[\s\S]*\}/);
+      if (jsonMatch) {
+        cleanedText = jsonMatch[0];
+      }
+
+      let feedback;
+      try {
+        feedback = JSON.parse(cleanedText) as AIVisionFeedback;
+      } catch (parseError) {
+        console.warn('Initial JSON parse failed, attempting repair...', parseError);
+        try {
+          const repairedJson = jsonrepair(cleanedText);
+          feedback = JSON.parse(repairedJson) as AIVisionFeedback;
+        } catch (repairError) {
+          throw new Error('Failed to parse or repair JSON from OpenAI: ' + repairError.message);
+        }
+      }
 
       if (!feedback.pages || !Array.isArray(feedback.pages)) {
         throw new Error('Malformed JSON structure returned by OpenAI: missing pages array.');
