@@ -1,6 +1,7 @@
 import { AIVisionProvider } from './types';
 import { GeminiProvider } from './providers/gemini';
 import { OpenAIProvider } from './providers/openai';
+import { OpenRouterProvider } from './providers/openrouter';
 
 export class AIVisionFactory {
   /**
@@ -15,9 +16,11 @@ export class AIVisionFactory {
         return new OpenAIProvider();
       case 'gemini':
         return new GeminiProvider();
+      case 'openrouter':
+        return new OpenRouterProvider();
       default:
         throw new Error(
-          `Unsupported AI Provider: "${provider}". Please set DEFAULT_AI_PROVIDER to either "openai" or "gemini" in your environment.`
+          `Unsupported AI Provider: "${provider}". Please set DEFAULT_AI_PROVIDER to "openai", "gemini" or "openrouter" in your environment.`
         );
     }
   }
