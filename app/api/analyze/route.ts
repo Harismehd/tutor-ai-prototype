@@ -3,6 +3,8 @@ import { z } from 'zod';
 import { AIVisionFactory } from '@/lib/ai/factory';
 import { toClientErrorPayload } from '@/lib/ai/errors';
 
+export const maxDuration = 60; // Request 60s timeout from Vercel if account allows
+
 // Input validation schema using Zod (accepts standard hex UUID formats and array of base64 images)
 const analyzeRequestSchema = z.object({
   studentId: z.string().regex(/^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/, 'Invalid student ID format'),
