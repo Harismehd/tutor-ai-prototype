@@ -43,9 +43,11 @@ export async function POST(req: NextRequest) {
 
     let userId: string;
     try {
-      // Decode the JWT payload locally in memory
+      // Decode the JWT payload locally in memory (Edge-compatible)
       const payloadBase64 = token.split('.')[1];
-      const payload = JSON.parse(Buffer.from(payloadBase64, 'base64').toString());
+      const base64 = payloadBase64.replace(/-/g, '+').replace(/_/g, '/');
+      const padded = base64.padEnd(base64.length + (4 - (base64.length % 4)) % 4, '=');
+      const payload = JSON.parse(atob(padded));
       userId = payload.sub; // Extract the user's Auth UID
       if (!userId) {
         throw new Error('Missing sub claim in token');
