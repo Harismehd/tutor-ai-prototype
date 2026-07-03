@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { AIVisionFactory } from '@/lib/ai/factory';
 import { toClientErrorPayload } from '@/lib/ai/errors';
 
-export const maxDuration = 60; // Request 60s timeout from Vercel if account allows
+export const runtime = 'edge'; // Deploy as Edge Function to raise Vercel Hobby timeout to 30s
 
 // Input validation schema using Zod (accepts standard hex UUID formats and array of base64 images)
 const analyzeRequestSchema = z.object({
