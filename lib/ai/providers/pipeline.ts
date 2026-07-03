@@ -59,6 +59,7 @@ async function gradeSinglePage(
   pageNumber: number,
   passes: number
 ): Promise<GradingResult[]> {
+  const errors: string[] = [];
   const attempts = await Promise.all(
     Array.from({ length: passes }).map(async (_, idx) => {
       try {
@@ -70,10 +71,12 @@ async function gradeSinglePage(
         );
         return parseResults(raw);
       } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
         console.error(
           `[AI Pipeline] ${adapter.name}: page ${pageNumber} pass ${idx + 1}/${passes} failed:`,
-          err instanceof Error ? err.message : err
+          msg
         );
+        errors.push(msg);
         return null;
       }
     })
@@ -82,7 +85,7 @@ async function gradeSinglePage(
   const validPasses = attempts.filter((p): p is GradingResult[] => p !== null);
 
   if (validPasses.length === 0) {
-    throw new Error(`All grading passes failed for page ${pageNumber}.`);
+    throw new Error(`All grading passes failed for page ${pageNumber}. Errors: ${errors.join(' | ')}`);
   }
 
   return validPasses.length > 1 ? mergeByConsensus(validPasses) : validPasses[0];
