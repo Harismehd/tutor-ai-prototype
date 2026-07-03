@@ -85,7 +85,7 @@ async function gradeSinglePage(
   const validPasses = attempts.filter((p): p is GradingResult[] => p !== null);
 
   if (validPasses.length === 0) {
-    throw new Error(`All grading passes failed for page ${pageNumber}. Errors: ${errors.join(' | ')}`);
+    throw new Error(`All grading passes failed for page ${pageNumber}.`);
   }
 
   return validPasses.length > 1 ? mergeByConsensus(validPasses) : validPasses[0];

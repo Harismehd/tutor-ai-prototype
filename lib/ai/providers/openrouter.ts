@@ -54,6 +54,7 @@ export class OpenRouterProvider extends BaseAIProvider implements ModelAdapter {
       body: JSON.stringify({
         model: this.modelName,
         response_format: { type: 'json_object' },
+        max_tokens: 4096,
         temperature,
         messages: [
           { role: 'system', content: systemPrompt },
@@ -82,6 +83,7 @@ export class OpenRouterProvider extends BaseAIProvider implements ModelAdapter {
       body: JSON.stringify({
         model: this.modelName,
         response_format: { type: 'json_object' },
+        max_tokens: 4096,
         temperature,
         messages: [
           { role: 'system', content: systemPrompt },
