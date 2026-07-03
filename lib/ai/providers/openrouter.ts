@@ -19,7 +19,7 @@ export class OpenRouterProvider extends BaseAIProvider implements ModelAdapter {
       throw new Error('OPENROUTER_API_KEY environment variable is not defined. Please check your setup.');
     }
     this.apiKey = apiKey;
-    this.modelName = process.env.OPENROUTER_MODEL || 'anthropic/claude-3.5-sonnet';
+    this.modelName = process.env.OPENROUTER_MODEL || 'anthropic/claude-sonnet-4.6';
   }
 
   async analyzeWorksheet(imagesBase64: string[]): Promise<AIVisionFeedback> {
