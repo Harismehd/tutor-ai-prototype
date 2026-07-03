@@ -35,12 +35,12 @@ export class OpenAIProvider extends BaseAIProvider implements ModelAdapter {
 
   // ---- ModelAdapter implementation ----
 
-  async callVisionJSON(
+  async callVision(
     systemPrompt: string,
     userPrompt: string,
     imagesBase64: string[],
     temperature: number
-  ): Promise<any> {
+  ): Promise<string> {
     const contentParts: any[] = [{ type: 'text', text: userPrompt }];
     imagesBase64.forEach((img) => {
       const dataUrl = img.startsWith('data:') ? img : `data:image/png;base64,${img}`;
@@ -49,7 +49,6 @@ export class OpenAIProvider extends BaseAIProvider implements ModelAdapter {
 
     const response = await this.openai.chat.completions.create({
       model: this.modelName,
-      response_format: { type: 'json_object' },
       temperature,
       messages: [
         { role: 'system', content: systemPrompt },
@@ -57,13 +56,12 @@ export class OpenAIProvider extends BaseAIProvider implements ModelAdapter {
       ],
     });
 
-    return this.parseJsonResponse(response.choices[0]?.message?.content);
+    return response.choices[0]?.message?.content || '';
   }
 
-  async callTextJSON(systemPrompt: string, userPrompt: string, temperature: number): Promise<any> {
+  async callText(systemPrompt: string, userPrompt: string, temperature: number): Promise<string> {
     const response = await this.openai.chat.completions.create({
       model: this.modelName,
-      response_format: { type: 'json_object' },
       temperature,
       messages: [
         { role: 'system', content: systemPrompt },
@@ -71,14 +69,6 @@ export class OpenAIProvider extends BaseAIProvider implements ModelAdapter {
       ],
     });
 
-    return this.parseJsonResponse(response.choices[0]?.message?.content);
-  }
-
-  private parseJsonResponse(responseText: string | null | undefined): any {
-    if (!responseText) {
-      throw new Error('Empty response received from OpenAI.');
-    }
-    const cleaned = responseText.replace(/```json|```/g, '').trim();
-    return JSON.parse(cleaned);
+    return response.choices[0]?.message?.content || '';
   }
 }

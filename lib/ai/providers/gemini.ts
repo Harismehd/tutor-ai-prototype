@@ -40,17 +40,16 @@ export class GeminiProvider extends BaseAIProvider implements ModelAdapter {
 
   // ---- ModelAdapter implementation ----
 
-  async callVisionJSON(
+  async callVision(
     systemPrompt: string,
     userPrompt: string,
     imagesBase64: string[],
     temperature: number
-  ): Promise<any> {
+  ): Promise<string> {
     const model = this.genAI.getGenerativeModel({
       model: this.modelName,
       systemInstruction: systemPrompt,
       generationConfig: {
-        responseMimeType: 'application/json',
         temperature,
       },
     });
@@ -61,28 +60,19 @@ export class GeminiProvider extends BaseAIProvider implements ModelAdapter {
     });
 
     const result = await model.generateContent([userPrompt, ...imageParts]);
-    return this.parseJsonResponse(result.response.text());
+    return result.response.text();
   }
 
-  async callTextJSON(systemPrompt: string, userPrompt: string, temperature: number): Promise<any> {
+  async callText(systemPrompt: string, userPrompt: string, temperature: number): Promise<string> {
     const model = this.genAI.getGenerativeModel({
       model: this.modelName,
       systemInstruction: systemPrompt,
       generationConfig: {
-        responseMimeType: 'application/json',
         temperature,
       },
     });
 
     const result = await model.generateContent(userPrompt);
-    return this.parseJsonResponse(result.response.text());
-  }
-
-  private parseJsonResponse(responseText: string): any {
-    if (!responseText) {
-      throw new Error('Empty response received from Gemini.');
-    }
-    const cleaned = responseText.replace(/```json|```/g, '').trim();
-    return JSON.parse(cleaned);
+    return result.response.text();
   }
 }

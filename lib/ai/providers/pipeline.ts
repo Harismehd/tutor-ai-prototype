@@ -5,8 +5,8 @@ import { SYSTEM_PROMPT, USER_INSTRUCTION } from './pipeline-prompts';
 
 export interface ModelAdapter {
   readonly name: string;
-  callVisionJSON(systemPrompt: string, userPrompt: string, imagesBase64: string[], temperature: number): Promise<any>;
-  callTextJSON(systemPrompt: string, userPrompt: string, temperature: number): Promise<any>;
+  callVision(systemPrompt: string, userPrompt: string, imagesBase64: string[], temperature: number): Promise<string>;
+  callText(systemPrompt: string, userPrompt: string, temperature: number): Promise<string>;
 }
 
 const GLOBAL_PROVIDER_CONCURRENCY = Number(process.env.AI_PIPELINE_MAX_CONCURRENCY) || 3;
@@ -19,7 +19,7 @@ export async function runGradingPipeline(rawAdapter: ModelAdapter, imagesBase64:
   }
 
   const adapter = withThrottleAndRetry(rawAdapter, GLOBAL_PROVIDER_CONCURRENCY);
-  const passesRequested = Number(process.env.AI_PIPELINE_PASSES) || (process.env.VERCEL ? 1 : 3);
+  const passesRequested = Number(process.env.AI_PIPELINE_PASSES) || 1;
 
   const pages = await Promise.all(
     imagesBase64.map(async (img, index) => {
@@ -63,11 +63,11 @@ async function gradeSinglePage(
   const attempts = await Promise.all(
     Array.from({ length: passes }).map(async (_, idx) => {
       try {
-        const raw = await adapter.callVisionJSON(
+        const raw = await adapter.callVision(
           SYSTEM_PROMPT,
           USER_INSTRUCTION,
           [imageDataUrl],
-          0.6
+          0.0
         );
         return parseResults(raw);
       } catch (err) {
@@ -315,9 +315,9 @@ function withThrottleAndRetry(adapter: ModelAdapter, limit: number): ModelAdapte
 
   return {
     name: adapter.name,
-    callVisionJSON: (systemPrompt, userPrompt, imagesBase64, temperature) =>
-      throttled(`${adapter.name}:vision`, () => adapter.callVisionJSON(systemPrompt, userPrompt, imagesBase64, temperature)),
-    callTextJSON: (systemPrompt, userPrompt, temperature) =>
-      throttled(`${adapter.name}:text`, () => adapter.callTextJSON(systemPrompt, userPrompt, temperature)),
+    callVision: (systemPrompt, userPrompt, imagesBase64, temperature) =>
+      throttled(`${adapter.name}:vision`, () => adapter.callVision(systemPrompt, userPrompt, imagesBase64, temperature)),
+    callText: (systemPrompt, userPrompt, temperature) =>
+      throttled(`${adapter.name}:text`, () => adapter.callText(systemPrompt, userPrompt, temperature)),
   };
 }

@@ -32,12 +32,12 @@ export class OpenRouterProvider extends BaseAIProvider implements ModelAdapter {
 
   // ---- ModelAdapter implementation ----
 
-  async callVisionJSON(
+  async callVision(
     systemPrompt: string,
     userPrompt: string,
     imagesBase64: string[],
     temperature: number
-  ): Promise<any> {
+  ): Promise<string> {
     const contentParts: any[] = [{ type: 'text', text: userPrompt }];
     imagesBase64.forEach((img) => {
       const { mimeType, base64Data } = this.parseDataUrl(img);
@@ -53,7 +53,6 @@ export class OpenRouterProvider extends BaseAIProvider implements ModelAdapter {
       },
       body: JSON.stringify({
         model: this.modelName,
-        response_format: { type: 'json_object' },
         max_tokens: 4096,
         temperature,
         messages: [
@@ -70,10 +69,10 @@ export class OpenRouterProvider extends BaseAIProvider implements ModelAdapter {
 
     const data = await response.json();
     const replyText = data.choices?.[0]?.message?.content;
-    return this.parseJsonResponse(replyText);
+    return replyText || '';
   }
 
-  async callTextJSON(systemPrompt: string, userPrompt: string, temperature: number): Promise<any> {
+  async callText(systemPrompt: string, userPrompt: string, temperature: number): Promise<string> {
     const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
       method: 'POST',
       headers: {
@@ -82,7 +81,6 @@ export class OpenRouterProvider extends BaseAIProvider implements ModelAdapter {
       },
       body: JSON.stringify({
         model: this.modelName,
-        response_format: { type: 'json_object' },
         max_tokens: 4096,
         temperature,
         messages: [
@@ -99,14 +97,6 @@ export class OpenRouterProvider extends BaseAIProvider implements ModelAdapter {
 
     const data = await response.json();
     const replyText = data.choices?.[0]?.message?.content;
-    return this.parseJsonResponse(replyText);
-  }
-
-  private parseJsonResponse(responseText: string | null | undefined): any {
-    if (!responseText) {
-      throw new Error('Empty response received from OpenRouter.');
-    }
-    const cleaned = responseText.replace(/```json|```/g, '').trim();
-    return JSON.parse(cleaned);
+    return replyText || '';
   }
 }
