@@ -3,8 +3,6 @@ import { z } from 'zod';
 import { AIVisionFactory } from '@/lib/ai/factory';
 import { toClientErrorPayload } from '@/lib/ai/errors';
 
-export const runtime = 'edge'; // Deploy as Edge Function to raise Vercel Hobby timeout to 30s
-
 // Input validation schema using Zod (accepts standard hex UUID formats and array of base64 images)
 const analyzeRequestSchema = z.object({
   studentId: z.string().regex(/^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/, 'Invalid student ID format'),
@@ -43,11 +41,9 @@ export async function POST(req: NextRequest) {
 
     let userId: string;
     try {
-      // Decode the JWT payload locally in memory (Edge-compatible)
+      // Decode the JWT payload locally in memory
       const payloadBase64 = token.split('.')[1];
-      const base64 = payloadBase64.replace(/-/g, '+').replace(/_/g, '/');
-      const padded = base64.padEnd(base64.length + (4 - (base64.length % 4)) % 4, '=');
-      const payload = JSON.parse(atob(padded));
+      const payload = JSON.parse(Buffer.from(payloadBase64, 'base64').toString());
       userId = payload.sub; // Extract the user's Auth UID
       if (!userId) {
         throw new Error('Missing sub claim in token');
