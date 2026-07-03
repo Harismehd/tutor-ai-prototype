@@ -19,7 +19,7 @@ export async function runGradingPipeline(rawAdapter: ModelAdapter, imagesBase64:
   }
 
   const adapter = withThrottleAndRetry(rawAdapter, GLOBAL_PROVIDER_CONCURRENCY);
-  const passesRequested = Number(process.env.AI_PIPELINE_PASSES) || 3;
+  const passesRequested = Number(process.env.AI_PIPELINE_PASSES) || (process.env.VERCEL ? 1 : 3);
 
   const pages = await Promise.all(
     imagesBase64.map(async (img, index) => {
