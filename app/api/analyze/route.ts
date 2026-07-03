@@ -65,7 +65,11 @@ export async function POST(req: NextRequest) {
     } catch (aiError: any) {
       console.error('AI Analysis Provider error:', aiError);
       return NextResponse.json(
-        toClientErrorPayload(aiError),
+        { 
+          error: aiError instanceof Error ? aiError.message : String(aiError),
+          code: 'DEBUG_ERROR',
+          stack: aiError instanceof Error ? aiError.stack : undefined
+        },
         { status: 502 }
       );
     }
