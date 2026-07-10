@@ -27,22 +27,6 @@ export async function POST(req: NextRequest) {
 
     const { studentId, imagesBase64 } = validation.data;
 
-    // Validate required environment variables before processing request
-    const activeProvider = process.env.AI_PROVIDER || 'gemini';
-    const isGemini = activeProvider === 'gemini';
-    const apiKey = isGemini ? process.env.GEMINI_API_KEY : process.env.OPENAI_API_KEY;
-
-    if (!apiKey || apiKey.trim() === '' || apiKey.toLowerCase().includes('placeholder')) {
-      console.error(`[Configuration Error]: Missing or placeholder API key for provider ${activeProvider}`);
-      return NextResponse.json(
-        { 
-          error: `Configuration Error: The active AI provider API key (${isGemini ? 'GEMINI_API_KEY' : 'OPENAI_API_KEY'}) is missing or set to placeholder. Please configure it in your environment variables.`,
-          code: 'CONFIG_ERROR' 
-        },
-        { status: 500 }
-      );
-    }
-
     // 1. Verify teacher authentication locally using the JWT token structure
     // This avoids making a slow/timeout-prone round-trip network request to Supabase Auth on the server.
     const authHeader = req.headers.get('Authorization');

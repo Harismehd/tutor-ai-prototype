@@ -42,10 +42,7 @@ export async function GET(req: NextRequest) {
     if (!sbUrl || !sbKey || sbUrl.toLowerCase().includes('placeholder') || sbKey.toLowerCase().includes('placeholder')) {
       console.error('[Configuration Error]: Supabase environment variables are missing or set to placeholder.');
       return NextResponse.json(
-        { 
-          error: 'Configuration Error: Supabase connection keys are missing or invalid placeholder values in the server configuration.',
-          code: 'DB_CONFIG_ERROR' 
-        },
+        { error: 'Internal Server Error' },
         { status: 500 }
       );
     }
@@ -66,11 +63,8 @@ export async function GET(req: NextRequest) {
     } catch (networkError: any) {
       console.error('[Database Connection Error]: Failed to connect to Supabase auth client:', networkError);
       return NextResponse.json(
-        { 
-          error: 'Database Connection Error: Failed to connect to Supabase database client. Please verify network access and credentials.', 
-          code: 'DB_CONNECTION_FAILED' 
-        },
-        { status: 502 }
+        { error: 'Internal Server Error' }, 
+        { status: 500 }
       );
     }
 
