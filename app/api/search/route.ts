@@ -35,14 +35,42 @@ export async function GET(req: NextRequest) {
       );
     }
 
+    // Verify Supabase configuration variables exist and are not placeholder values
+    const sbUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+    const sbKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+
+    if (!sbUrl || !sbKey || sbUrl.toLowerCase().includes('placeholder') || sbKey.toLowerCase().includes('placeholder')) {
+      console.error('[Configuration Error]: Supabase environment variables are missing or set to placeholder.');
+      return NextResponse.json(
+        { 
+          error: 'Configuration Error: Supabase connection keys are missing or invalid placeholder values in the server configuration.',
+          code: 'DB_CONFIG_ERROR' 
+        },
+        { status: 500 }
+      );
+    }
+
     const supabase = createServerSupabaseClient(req);
 
-    // Verify user authentication using the extracted JWT
-    const { data: { user }, error: authError } = await supabase.auth.getUser(token);
-    if (authError || !user) {
+    // Verify user authentication using the extracted JWT with connection safety catch
+    let user;
+    try {
+      const { data, error: authError } = await supabase.auth.getUser(token);
+      if (authError || !data?.user) {
+        return NextResponse.json(
+          { error: 'Unauthorized: Invalid or expired session' }, 
+          { status: 401 }
+        );
+      }
+      user = data.user;
+    } catch (networkError: any) {
+      console.error('[Database Connection Error]: Failed to connect to Supabase auth client:', networkError);
       return NextResponse.json(
-        { error: 'Unauthorized: Invalid or expired session' }, 
-        { status: 401 }
+        { 
+          error: 'Database Connection Error: Failed to connect to Supabase database client. Please verify network access and credentials.', 
+          code: 'DB_CONNECTION_FAILED' 
+        },
+        { status: 502 }
       );
     }
 

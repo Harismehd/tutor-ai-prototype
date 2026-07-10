@@ -45,7 +45,13 @@ create table if not exists public.student_feedback (
   student_id uuid not null references public.students(id) on delete cascade,
   teacher_id uuid not null references public.profiles(id) on delete cascade,
   questions jsonb not null,
-  created_at timestamp with time zone default timezone('utc'::text, now()) not null
+  created_at timestamp with time zone default timezone('utc'::text, now()) not null,
+  
+  -- Backward-compatibility fields to prevent RLS/caching select crashes on legacy clients
+  mistake text,
+  correct_answer text,
+  reason_traditional_chinese text,
+  weak_area_tag text
 );
 
 -- ------------------------------------------
