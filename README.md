@@ -1,17 +1,17 @@
 # TutorAI Platform - System Deployment & Handover Guide
 
-TutorAI is an enterprise-grade multi-tenant tutoring platform designed to demonstrate secure database-level tenant isolation, search-as-you-type student query matching, and an in-memory AI-assisted multi-page worksheet evaluation workflow.
+TutorAI is an enterprise-grade multi-tenant tutoring platform designed to demonstrate secure database-level tenant isolation, search-as-you-type student query matching, and an in-memory AI-assisted[...]
 
 ---
 
 ## 🏗️ Architectural & Security Principles
 
 1. **Multi-Tenant Database Isolation (PostgreSQL RLS)**: 
-   Access control is strictly enforced at the database layer using PostgreSQL Row Level Security (RLS) policies. A custom `get_user_centre_id()` security definer function looks up the authenticated user's `centre_id` on the `profiles` table. This prevents recursive lookup loops, bypasses frontend-only filters, and guards against IDOR (Insecure Direct Object Reference) vulnerabilities or cross-centre data leakage.
+   Access control is strictly enforced at the database layer using PostgreSQL Row Level Security (RLS) policies. A custom `get_user_centre_id()` security definer function looks up the authenticate[...]
 2. **In-Memory Vision Pipeline & Zero Storage Footprint**: 
-   Worksheet images are processed purely in memory as base64 strings and sent directly to the AI vision endpoint. No visual files are written to disk, server memory, or database tables. The AI feedback is parsed and only textual evaluation records are stored, ensuring strict visual privacy and student data safety.
+   Worksheet images are processed purely in memory as base64 strings and sent directly to the AI vision endpoint. No visual files are written to disk, server memory, or database tables. The AI fee[...]
 3. **Supabase Realtime Broadcast**: 
-   Live activities and feedback runs automatically sync across separate teacher devices within the same centre using Supabase Realtime subscriptions. Security is fully preserved as Supabase filters the broadcast messages on the fly matching the teacher's active PostgreSQL RLS privileges.
+   Live activities and feedback runs automatically sync across separate teacher devices within the same centre using Supabase Realtime subscriptions. Security is fully preserved as Supabase filter[...]
 4. **Swappable AI Provider Abstraction**: 
    A unified AI provider interface allows swapping the default AI Vision provider (`openai` or `gemini`) using environment variables, requiring zero code modifications.
 
@@ -49,7 +49,7 @@ If setting up a new Supabase database:
 3. Click **Run** to generate the tables, configure indexes, enable RLS policies, map database triggers, and load seed records.
 
 ### Option B: Non-Destructive Update (Add Compatibility Columns)
-If you already have a live database with active teacher/student data, **do not drop the tables**. Run the following SQL migration script in your Supabase SQL Editor to append the backward-compatibility columns. This instantly resolves legacy frontend query crashes (`Error 42703: column "student_feedback.mistake" does not exist`) while preserving all data:
+If you already have a live database with active teacher/student data, **do not drop the tables**. Run the following SQL migration script in your Supabase SQL Editor to append the backward-compatib[...]
 
 ```sql
 -- Non-destructive migration to add nullable legacy columns for backward compatibility
@@ -129,3 +129,11 @@ Use these preset IDs in the application to evaluate RLS security boundaries:
 2. Select student **梁志強** on both sessions.
 3. Upload and analyze a worksheet on Session 1.
 4. Observe Session 2: The **Recent Runs** activity log and **Feedback History** list will instantly update in real-time, without requiring a page refresh.
+
+---
+
+## 👋 Interested in professional help?
+
+If you found this project useful and would like professional support to build, customise, or deploy similar TypeScript + Supabase solutions, I offer reliable, end-to-end services with clear communication and fair pricing. You're welcome to review my work and place an order on my Fiverr profile: https://www.fiverr.com/s/NNv7NrQ
+
+I deliver practical, production-ready results and will work with you to make sure the final product meets your needs. Let's grow together.
